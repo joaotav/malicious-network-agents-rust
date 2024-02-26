@@ -11,21 +11,30 @@ use crate::client::Client;
 /// ```
 /// let mut game = Game::default();
 /// ```
-#[derive(Default, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Game {
     /// Represents the state of the game. Should be set to `false` if the game is
     /// not ready to be played.
     is_ready: bool,
     /// The value assigned to all honest agents.
-    value: u64,
+    value: Option<u64>,
     /// The maximum value that can be assigned to a liar.
-    max_value: u64,
+    max_value: Option<u64>,
     /// A vector to store instances of `Agent` that are deployed and ready
     /// to participate in a round of the game.
     active_agents: Vec<Agent>,
 }
 
 impl Game {
+    pub fn new() -> Self {
+        Game {
+            is_ready: false,
+            value: None,
+            max_value: None,
+            active_agents: Vec::new(),
+        }
+    }
+
     pub fn print_welcome() {
         println!("\n{}\n", ">>>>> Welcome to Liars Lie! <<<<<".bold().green());
     }
@@ -38,13 +47,16 @@ impl Game {
         println!("{}", "The game has not yet been started!\n".bold().red());
     }
 
-    fn print_ready() {
+    fn print_ready(&self) {
+        if self.value == None || self.max_value == None || self.active_agents.len() == 0 {
+            panic!("Game cannot be started! Missing game values or active agents.\n");
+        }
         println!("{}\n", "Game is ready!".bold().green());
     }
 
     /// Resets all the fields of `Game` to their default values.
     fn reset_game(&mut self) {
-        *self = Game::default();
+        *self = Game::new();
     }
 
     /// Attempts to write data to the `agents.config` file.
@@ -102,12 +114,12 @@ impl Game {
     /// A setter function for `Game.value`
     // May not be idiomatic Rust, see: https://www.reddit.com/r/rust/comments/d7w6n7
     fn set_value(&mut self, value: u64) {
-        self.value = value;
+        self.value = Some(value);
     }
 
     /// A setter function for `Game.max_value`
     fn set_max_value(&mut self, max_value: u64) {
-        self.max_value = max_value;
+        self.max_value = Some(max_value);
     }
 
     /// A setter function for `Game.is_ready`
@@ -125,7 +137,7 @@ impl Game {
             Game::print_started();
             return;
         }
-
+        self.print_ready();
         let (num_honest, num_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
 
         // OBS: An improvement would be to shuffle the values or ids of agents in
@@ -154,8 +166,8 @@ impl Game {
             return;
         }
 
-        self.init_game(value, max_value);
-        Game::print_ready();
+        // self.init_game(value, max_value);
+        self.print_ready();
     }
 
 
@@ -255,13 +267,13 @@ mod tests {
 
     #[test]
     fn test_reset_game() {
-        let mut game = Game::default();
+        let mut game = Game::new();
 
         game.is_ready = true;
-        assert_ne!(game, Game::default());
+        assert_ne!(game, Game::new());
 
         game.reset_game();
-        assert_eq!(game, Game::default());
+        assert_eq!(game, Game::new());
     }
 
     #[test]

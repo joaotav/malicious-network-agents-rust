@@ -11,9 +11,9 @@ mod commands;
 mod game;
 
 fn main() {
-    let mut game = Game::default();
+    let mut game = Game::new();
     Game::print_welcome();
-
+    
     loop {
         let user_input = match Game::get_user_input() {
             Ok(user_input) => user_input,

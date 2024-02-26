@@ -33,7 +33,6 @@ impl Args {
                 // Validate the values passed to the command's options (e.g, valid range and non-zero)
                 match args.command.validate_args_values() {
                     Ok(()) => {
-                        println!("{:?}", args);
                         Ok(args)
                     },
                     Err(e) => Err(e),

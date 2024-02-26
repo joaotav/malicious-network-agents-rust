@@ -38,6 +38,10 @@ impl Game {
         println!("{}", "The game has not yet been started!\n".bold().red());
     }
 
+    fn print_ready() {
+        println!("{}\n", "Game is ready!".bold().green());
+    }
+
     /// Resets all the fields of `Game` to their default values.
     fn reset_game(&mut self) {
         *self = Game::default();
@@ -93,7 +97,6 @@ impl Game {
         self.set_value(value);
         self.set_max_value(max_value);
         self.set_ready();
-        println!("{}\n", "Game is ready!".bold().green());
     }
 
     /// A setter function for `Game.value`
@@ -152,7 +155,7 @@ impl Game {
         }
 
         self.init_game(value, max_value);
-        dbg!(&self);
+        Game::print_ready();
     }
 
 
@@ -181,8 +184,6 @@ impl Game {
         if let Err(e) = client.load_agent_config(&agent_config) {
             println!("error: failed to load data from agents.config - {}\n", e);
         }
-
-        dbg!(&client);
 
     }
 

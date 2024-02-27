@@ -80,8 +80,8 @@ impl Game {
     /// represented by `liar_ratio`. `num_liars` is truncated, e.g, if `num_agents` is 6
     /// and `liar_ratio` is 0.6, therefore `num_liars` is 3.59, `num_liars` will be 3.
     fn get_agent_distribution(num_agents: u16, liar_ratio: f32) -> (u16, u16) {
-        // Number of honest agents = `num_agents` * (1 - `liar_ratio`)  
-        // Number of liars = (`num_agents` * `liar_ratio`)  
+        // Number of honest agents = `num_agents` * (1 - `liar_ratio`)
+        // Number of liars = (`num_agents` * `liar_ratio`)
         let num_liars = ((num_agents as f32) * liar_ratio) as u16;
         let num_honest = num_agents - num_liars;
         (num_honest, num_liars)
@@ -127,11 +127,10 @@ impl Game {
         self.is_ready = true;
     }
 
-
     /// Executes the `start` command. The `start` command launches a number of independent
     /// agents and produces the `agents.config` file containing information that can be used
     /// to communicate with those agents. It then displays a message to indicate that the
-    //  game is ready to be played. 
+    //  game is ready to be played.
     pub fn start(&mut self, value: u64, max_value: u64, num_agents: u16, liar_ratio: f32) {
         if self.is_ready() {
             Game::print_started();
@@ -147,7 +146,6 @@ impl Game {
         // and the second half all have different values (liars)
         self.add_honest_agents(value, num_honest);
         self.add_liar_agents(value, max_value, num_liars);
-
 
         // TODO: self.deploy_agents();
 
@@ -169,7 +167,6 @@ impl Game {
         // self.init_game(value, max_value);
         self.print_ready();
     }
-
 
     /// Executes the `play` command. The `play` command creates an instance of
     /// `Client`, which then reads the `agents.config` file to obtain information
@@ -196,11 +193,10 @@ impl Game {
         if let Err(e) = client.load_agent_config(&agent_config) {
             println!("error: failed to load data from agents.config - {}\n", e);
         }
-
     }
 
-    /// Executes the `stop` command. The `stop` command stops all agents listed 
-    /// in the `agents.config`file, removes all agent information from the same file, 
+    /// Executes the `stop` command. The `stop` command stops all agents listed
+    /// in the `agents.config`file, removes all agent information from the same file,
     /// and exit from the program.
     pub fn stop(&self) {
         todo!()
@@ -217,9 +213,9 @@ impl Game {
         todo!()
     }
 
-    /// Executes the `playexpert` command. The `playexpert` command plays a round of the 
+    /// Executes the `playexpert` command. The `playexpert` command plays a round of the
     /// the game in expert mode. Expert mode is similar to the standard mode implemented by
-    /// the `play` command, however unlike in standard mode, the client can only directly 
+    /// the `play` command, however unlike in standard mode, the client can only directly
     /// query a subset of the currently deployed agents, the size of which is taken as
     /// an argument by `fn play_expert()`.
     pub fn play_expert(&self, num_agents: u16, liar_ratio: f32) {
@@ -230,7 +226,7 @@ impl Game {
         todo!()
     }
 
-    /// Executes the `kill` command. The `kill` command receives an agent ID as an argument 
+    /// Executes the `kill` command. The `kill` command receives an agent ID as an argument
     /// and kills the corresponding agent, but does not modify the `agents.config` file.
     pub fn kill(&mut self, agent_id: u16) {
         if !self.is_ready() {
@@ -260,7 +256,6 @@ impl Game {
 // ************************************* UNIT TESTS *****************************************
 // ******************************************************************************************
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +283,4 @@ mod tests {
         (num_honest, num_liars) = Game::get_agent_distribution(num_agents, liar_ratio);
         assert_eq!((num_honest, num_liars), (3, 3));
     }
-
 }

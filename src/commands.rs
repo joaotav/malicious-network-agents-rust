@@ -77,7 +77,7 @@ impl Commands {
         match self {
             Commands::Start {
                 value, max_value, ..
-            }  => Some((*value, *max_value)),
+            } => Some((*value, *max_value)),
             Commands::Play { .. }
             | Commands::Extend { .. }
             | Commands::PlayExpert { .. }
@@ -102,7 +102,7 @@ impl Commands {
         todo!();
     }
 
-    /// Receives a variant of `Commands``, check for, and test all possible arguments to ensure 
+    /// Receives a variant of `Commands``, check for, and test all possible arguments to ensure
     /// that they satisfy the program's constraints.
     pub fn validate_args_values(&self) -> Result<(), String> {
         self.validate_liar_ratio()?;
@@ -175,35 +175,63 @@ impl Commands {
 mod tests {
     use super::*;
 
-#[test]
-fn rejects_invalid_liar_ratio() {
-    let case1 = Commands::Start { value: 5, max_value: 8, num_agents: 5, liar_ratio: 2.0};
-    assert!(case1.validate_liar_ratio().is_err());
+    #[test]
+    fn rejects_invalid_liar_ratio() {
+        let case1 = Commands::Start {
+            value: 5,
+            max_value: 8,
+            num_agents: 5,
+            liar_ratio: 2.0,
+        };
+        assert!(case1.validate_liar_ratio().is_err());
 
-    let case2 = Commands::Start { value: 5, max_value: 8, num_agents: 5, liar_ratio: -0.1};
-    assert!(case2.validate_liar_ratio().is_err());
-}
+        let case2 = Commands::Start {
+            value: 5,
+            max_value: 8,
+            num_agents: 5,
+            liar_ratio: -0.1,
+        };
+        assert!(case2.validate_liar_ratio().is_err());
+    }
 
-#[test]
-fn rejects_invalid_num_agents() {
-    let command = Commands::Start { value: 5, max_value: 8, num_agents: 0, liar_ratio: 0.5};
-    assert!(command.validate_num_agents().is_err());
-}
+    #[test]
+    fn rejects_invalid_num_agents() {
+        let command = Commands::Start {
+            value: 5,
+            max_value: 8,
+            num_agents: 0,
+            liar_ratio: 0.5,
+        };
+        assert!(command.validate_num_agents().is_err());
+    }
 
-#[test]
-fn rejects_invalid_value_and_max_value() {
-    // Should throw an error because value = 0
-    let case1 = Commands::Start { value: 0, max_value: 8, num_agents: 5, liar_ratio: 0.5};
-    assert!(case1.validate_agent_values().is_err());
+    #[test]
+    fn rejects_invalid_value_and_max_value() {
+        // Should throw an error because value = 0
+        let case1 = Commands::Start {
+            value: 0,
+            max_value: 8,
+            num_agents: 5,
+            liar_ratio: 0.5,
+        };
+        assert!(case1.validate_agent_values().is_err());
 
-    // Should throw an error because value > max_value
-    let case2 = Commands::Start { value: 3, max_value: 2, num_agents: 5, liar_ratio: 0.5};
-    assert!(case2.validate_agent_values().is_err());
+        // Should throw an error because value > max_value
+        let case2 = Commands::Start {
+            value: 3,
+            max_value: 2,
+            num_agents: 5,
+            liar_ratio: 0.5,
+        };
+        assert!(case2.validate_agent_values().is_err());
 
-    // Should throw an error because max_value = 1
-    let case3 = Commands::Start { value: 1, max_value: 1, num_agents: 5, liar_ratio: 0.5};
-    assert!(case3.validate_agent_values().is_err());
-}
-
-
+        // Should throw an error because max_value = 1
+        let case3 = Commands::Start {
+            value: 1,
+            max_value: 1,
+            num_agents: 5,
+            liar_ratio: 0.5,
+        };
+        assert!(case3.validate_agent_values().is_err());
+    }
 }

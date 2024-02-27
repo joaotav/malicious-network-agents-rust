@@ -4,9 +4,9 @@ use std::io::{self, Result};
 
 use crate::agent_config::AgentConfig;
 
-/// Represents a game client. 
+/// Represents a game client.
 ///
-/// `Client`s are responsible for communicating with deployed agents 
+/// `Client`s are responsible for communicating with deployed agents
 /// and querying for their individual values to determine the network value.
 #[derive(Debug)]
 pub struct Client {
@@ -21,7 +21,7 @@ impl Client {
         }
     }
 
-    /// Attempts to read the `AgentConfig` data from the `agents.config` file 
+    /// Attempts to read the `AgentConfig` data from the `agents.config` file
     /// and return it if the read operation succeeds.
     pub fn read_agent_config() -> Result<String> {
         let config = fs::read_to_string("agents.config")?;

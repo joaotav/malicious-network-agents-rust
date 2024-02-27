@@ -8,18 +8,17 @@ static AGENT_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 static BASE_PORT: AtomicUsize = AtomicUsize::new(5_000);
 const AGENT_ADDR: &str = "127.0.0.1";
 
-
 /// Represents an agent in the Liars Lie game.
 ///
 /// Each `Agent` has an unique identifier `agent_id`, a value `value` to report when
-/// queried, and a network `address` and `port` used for communication with clients and 
+/// queried, and a network `address` and `port` used for communication with clients and
 /// other Agents. Agents can be instantiated as either honest or liars.
 ///
 /// # Examples
 ///
 /// ```
 /// let honest_agent = Agent::new_honest(10);
-/// let liar = Agent::new_liar(10, 99); 
+/// let liar = Agent::new_liar(10, 99);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Agent {
@@ -35,7 +34,7 @@ pub struct Agent {
 
 impl Agent {
     /// Returns a new honest instance of `Agent` with the `value` field set to the value
-    /// received as argument. Each new instance is assigned an unique `agent_id` 
+    /// received as argument. Each new instance is assigned an unique `agent_id`
     /// and `port`.
     pub fn new_honest(value: u64) -> Self {
         let agent_id = Self::get_new_id();
@@ -65,8 +64,8 @@ impl Agent {
         }
     }
 
-    /// Receives an instance of `Agent` to generate a new instance of `AgentConfig`, 
-    /// which contains only the fields of `Agent` that can be shared with other 
+    /// Receives an instance of `Agent` to generate a new instance of `AgentConfig`,
+    /// which contains only the fields of `Agent` that can be shared with other
     /// participants of the game.
     pub fn to_config(&self) -> AgentConfig {
         AgentConfig::new(self.agent_id, &self.address, self.port)
@@ -87,7 +86,7 @@ impl Agent {
         AGENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Returns an arbitrary `liar_value`, such that `liar_value` != `honest_value` and 
+    /// Returns an arbitrary `liar_value`, such that `liar_value` != `honest_value` and
     /// 1 <= `liar_value` <= `max_value`.
     fn get_liar_value(honest_value: u64, max_value: u64) -> u64 {
         let value_to_skip = honest_value;
@@ -114,7 +113,7 @@ mod tests {
     #[test]
     fn liar_value_is_diff_from_honest() {
         // Must be careful when testing randomly generated values like this.
-        // Even though the chance of the test failing is negligible for a 
+        // Even though the chance of the test failing is negligible for a
         // high number of iterations, for applications where security is critical
         // a more robust testing strategy should be used.
         let honest_value = 5;
@@ -124,9 +123,15 @@ mod tests {
         for _ in 0..iter {
             let liar_value = Agent::get_liar_value(honest_value, max_value);
             assert_ne!(liar_value, 0, "Liar value cannot be 0");
-            assert_ne!(liar_value, honest_value, "Liar value must be different from honest value");
-            assert!(liar_value <= max_value, "Liar value cannot be greater than max_value");
-        };
+            assert_ne!(
+                liar_value, honest_value,
+                "Liar value must be different from honest value"
+            );
+            assert!(
+                liar_value <= max_value,
+                "Liar value cannot be greater than max_value"
+            );
+        }
     }
 
     #[test]
@@ -146,6 +151,4 @@ mod tests {
             assert_eq!(first_id + i, new_id);
         }
     }
-
-
 }

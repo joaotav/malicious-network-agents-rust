@@ -9,6 +9,7 @@ mod args;
 mod client;
 mod commands;
 mod game;
+mod keys;
 
 fn main() {
     let mut game = Game::new();

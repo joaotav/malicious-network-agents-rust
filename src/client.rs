@@ -10,15 +10,13 @@ use crate::agent_config::AgentConfig;
 /// and querying for their individual values to determine the network value.
 #[derive(Debug)]
 pub struct Client {
-    peer_addresses: Vec<AgentConfig>,
+    peers: Vec<AgentConfig>,
 }
 
 impl Client {
     /// Returns a new instance of `Client` with an empty `peer_addresses` Vec
     pub fn new() -> Self {
-        Client {
-            peer_addresses: Vec::new(),
-        }
+        Client { peers: Vec::new() }
     }
 
     /// Attempts to read the `AgentConfig` data from the `agents.config` file
@@ -31,7 +29,7 @@ impl Client {
     /// Receives a string slice containing the data read from `agents.config`
     //  and attempts to deserialize and store it in Client.peer_addresses
     pub fn load_agent_config(&mut self, agent_config: &str) -> Result<()> {
-        self.peer_addresses = serde_json::from_str(&agent_config)?;
+        self.peers = serde_json::from_str(&agent_config)?;
         Ok(())
     }
 }

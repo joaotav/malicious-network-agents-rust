@@ -136,7 +136,6 @@ impl Game {
             Game::print_started();
             return;
         }
-        self.print_ready();
         let (num_honest, num_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
 
         // OBS: An improvement would be to shuffle the values or ids of agents in
@@ -164,7 +163,7 @@ impl Game {
             return;
         }
 
-        // self.init_game(value, max_value);
+        self.init_game(value, max_value);
         self.print_ready();
     }
 

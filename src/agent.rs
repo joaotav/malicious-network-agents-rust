@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::agent_config::AgentConfig;
+use crate::keys::Keys;
 
 static AGENT_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 static BASE_PORT: AtomicUsize = AtomicUsize::new(5_000);
@@ -30,6 +31,8 @@ pub struct Agent {
     address: String,
     /// The network port in which the agent listens when deployed.
     port: usize,
+    /// The agent's private and public keys for signing messages
+    agent_keys: Keys,
 }
 
 impl Agent {
@@ -40,11 +43,13 @@ impl Agent {
         let agent_id = Self::get_new_id();
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
+        let agent_keys = Keys::new_keypair();
         Agent {
             agent_id,
             value,
             address,
             port,
+            agent_keys,
         }
     }
 
@@ -56,11 +61,13 @@ impl Agent {
         let value = Self::get_liar_value(honest_value, max_value);
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
+        let agent_keys = Keys::new_keypair();
         Agent {
             agent_id,
             value,
             address,
             port,
+            agent_keys,
         }
     }
 
@@ -68,7 +75,12 @@ impl Agent {
     /// which contains only the fields of `Agent` that can be shared with other
     /// participants of the game.
     pub fn to_config(&self) -> AgentConfig {
-        AgentConfig::new(self.agent_id, &self.address, self.port)
+        AgentConfig::new(
+            self.agent_id,
+            &self.address,
+            self.port,
+            &self.agent_keys.public_key,
+        )
     }
 
     /// TODO

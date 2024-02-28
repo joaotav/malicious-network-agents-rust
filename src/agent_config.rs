@@ -1,5 +1,5 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
-
 /// Represents an instance of `Agent` in a format that can be shared with
 /// other participants of the game.
 ///
@@ -21,7 +21,7 @@ pub struct AgentConfig {
 
 impl AgentConfig {
     /// Returns a new instance of `AgentConfig` initialized with the values from `agent_id`
-    /// `address` and `port`.
+    /// `address`, `port` and `public_key`.
     pub fn new(agent_id: usize, address: &str, port: usize, public_key: &str) -> Self {
         Self {
             agent_id,

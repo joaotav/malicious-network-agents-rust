@@ -21,7 +21,7 @@ const AGENT_ADDR: &str = "127.0.0.1";
 /// let honest_agent = Agent::new_honest(10);
 /// let liar = Agent::new_liar(10, 99);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Agent {
     /// An identifier for each instance of Agent.
     agent_id: usize,
@@ -43,7 +43,7 @@ impl Agent {
         let agent_id = Self::get_new_id();
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
-        let agent_keys = Keys::new_keypair();
+        let agent_keys = Keys::new_key_pair();
         Agent {
             agent_id,
             value,
@@ -61,7 +61,7 @@ impl Agent {
         let value = Self::get_liar_value(honest_value, max_value);
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
-        let agent_keys = Keys::new_keypair();
+        let agent_keys = Keys::new_key_pair();
         Agent {
             agent_id,
             value,
@@ -79,7 +79,7 @@ impl Agent {
             self.agent_id,
             &self.address,
             self.port,
-            &self.agent_keys.public_key,
+            &self.agent_keys.get_public_key(),
         )
     }
 

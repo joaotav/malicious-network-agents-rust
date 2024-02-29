@@ -10,19 +10,30 @@ use serde::{Deserialize, Serialize};
 /// digital signatures.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Keys {
+    // A base64-encoded Ed25519 key pair
     private_key: String,
+    // A public key, encoded as base64 to facilitate serialization
     public_key: String,
 }
 
 impl Keys {
+    /// Generates an Ed25519 key pair, encodes the keys as base64 and returns
+    /// them within a new instance of `Keys`.
     pub fn new_key_pair() -> Self {
         let rng = rand::SystemRandom::new();
+
+        // Generate a PKCS#8 representation of the new key pair
         let pkcs8_bytes = signature::Ed25519KeyPair::generate_pkcs8(&rng)
             .expect("error: unable to generate agent keys\n");
+
+        // Construct the key pair from the bytes representation
         let key_pair = signature::Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref())
             .expect("error: unable to generate agent keys\n");
 
+        // Encode the key pair as base64
         let private_key = general_purpose::STANDARD.encode(pkcs8_bytes.as_ref());
+
+        // Derive the public key from the key pair and encode it as base64
         let public_key = general_purpose::STANDARD.encode(key_pair.public_key().as_ref());
 
         Keys {

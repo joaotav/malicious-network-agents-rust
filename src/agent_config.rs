@@ -30,4 +30,20 @@ impl AgentConfig {
             public_key: public_key.to_owned(),
         }
     }
+
+    pub fn get_address(&self) -> &String {
+        &self.address
+    }
+
+    pub fn get_id(&self) -> usize {
+        self.agent_id
+    }
+
+    pub fn get_port(&self) -> usize {
+        self.port
+    }
+
+    pub fn get_public_key(&self) -> &String {
+        &self.public_key
+    }
 }

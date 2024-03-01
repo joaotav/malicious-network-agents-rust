@@ -10,8 +10,10 @@ mod client;
 mod commands;
 mod game;
 mod keys;
+mod network_utils;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut game = Game::new();
     Game::print_welcome();
 
@@ -19,7 +21,7 @@ fn main() {
         let user_input = match Game::get_user_input() {
             Ok(user_input) => user_input,
             Err(e) => {
-                println!("error: failed to read user input.\n");
+                println!("error: failed to read user input - {}.\n", e);
                 continue;
             }
         };

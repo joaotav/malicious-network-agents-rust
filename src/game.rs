@@ -10,7 +10,7 @@ use crate::client::Client;
 ///
 /// # Example
 /// ```
-/// let mut game = Game::default();
+/// let mut game = Game::new();
 /// ```
 #[derive(Debug, PartialEq)]
 pub struct Game {
@@ -209,15 +209,13 @@ impl Game {
     /// the file, the client must then directly query each individuaal agent for their
     /// value. After collecting the value from every agent, the client must determine
     /// the network value and print it.
-    pub async fn play(&self) {
+    pub async fn play(&mut self) {
         if !self.is_ready() {
             Game::print_not_started();
             return;
         }
 
         println!("{}", "[+] Playing a standard round...\n".bold());
-
-        let mut client = Client::new();
 
         let agent_config = match Client::read_agent_config() {
             Ok(agent_config) => agent_config,
@@ -227,14 +225,14 @@ impl Game {
             }
         };
 
-        if let Err(e) = client.load_agent_config(&agent_config) {
+        if let Err(e) = self.game_client.load_agent_config(&agent_config) {
             println!("error: failed to load data from agents.config - {}\n", e);
             return;
         }
 
         println!("{}", "[+] Querying agents for their values...\n".bold());
 
-        match client.play_standard().await {
+        match self.game_client.play_standard().await {
             Ok(agent_values) => {
                 Client::print_network_value(&Client::infer_network_value(&agent_values))
             }

@@ -2,25 +2,25 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
 
-/// Returns the length of `message` as a big-endian 4 bytes array.
-pub fn get_msg_len(message: &str) -> [u8; 4] {
-    (message.len() as u32).to_be_bytes()
+/// Returns the length of `data` as a big-endian 4 bytes array.
+pub fn get_length(data: &[u8]) -> [u8; 4] {
+    (data.len() as u32).to_be_bytes()
 }
 
-/// Attempts to write `message` to `socket`. Returns `tokio::io:Error`` upon failure.
-pub async fn send_message(message: &str, socket: &mut TcpStream) -> io::Result<()> {
-    let msg_len = get_msg_len(message);
+/// Attempts to write `packet` to `socket`. Returns `tokio::io:Error`` upon failure.
+pub async fn send_packet(packet: &[u8], socket: &mut TcpStream) -> io::Result<()> {
+    let packet_len = get_length(packet);
 
     // Send the length prefix
-    socket.write_all(&msg_len).await?;
+    socket.write_all(&packet_len).await?;
 
-    // Send the message
-    socket.write_all(message.as_bytes()).await?;
+    // Send the packet
+    socket.write_all(packet).await?;
 
     Ok(())
 }
 
-/// Reads a message containing a length prefix from a TcpStream and returns it as usize.
+/// Reads a packet containing a length prefix from a TcpStream and returns it as usize.
 pub async fn read_length_prefix(socket: &mut TcpStream) -> Result<usize, io::Error> {
     let mut buffer_length = [0u8; 4];
 
@@ -30,34 +30,31 @@ pub async fn read_length_prefix(socket: &mut TcpStream) -> Result<usize, io::Err
         .await
         .expect("error: failed to read data from socket\n");
 
-    let message_length = u32::from_be_bytes(buffer_length) as usize;
-    Ok(message_length)
+    let packet_length = u32::from_be_bytes(buffer_length) as usize;
+    Ok(packet_length)
 }
 
-/// Allocates a buffer of size `message_length` initialized with zeros.
-fn alloc_msg_buffer(message_length: usize) -> Vec<u8> {
-    vec![0u8; message_length]
+/// Allocates a buffer of size `length` initialized with zeros.
+fn alloc_buffer(length: usize) -> Vec<u8> {
+    vec![0u8; length]
 }
 
-/// Reads a message from a TcpStream `socket` and returns it as a String.
-pub async fn recv_message(socket: &mut TcpStream) -> Result<String, io::Error> {
-    // Read the 4 bytes, message length prefix
-    let message_length = read_length_prefix(socket).await?;
+/// Reads a packet from a TcpStream `socket` and returns it as a String.
+pub async fn recv_packet(socket: &mut TcpStream) -> Result<Vec<u8>, io::Error> {
+    // Read the 4 bytes length prefix
+    let packet_length = read_length_prefix(socket).await?;
 
-    // Allocate a buffer with the same length as the incoming message
-    let mut buffer = alloc_msg_buffer(message_length);
+    // Allocate a buffer with the same length as the incoming packet
+    let mut buffer = alloc_buffer(packet_length);
 
-    // Read the message into the buffer
+    // Read the packet into the buffer
     socket.read_exact(&mut buffer).await?;
 
-    let message = String::from_utf8_lossy(&buffer[..message_length]);
-    Ok(message.to_string())
+    Ok(buffer)
 }
 
 /// Attempts to establish a connection to `address`:`port` and return the
 /// connection object if successful.
-pub async fn connect(address: String, port: usize) -> TcpStream {
-    TcpStream::connect(format!("{}:{}", address, port,))
-        .await
-        .expect("error: unable to establish connection with agent")
+pub async fn connect(address: &str, port: usize) -> Result<TcpStream, io::Error> {
+    TcpStream::connect(format!("{}:{}", address, port,)).await
 }

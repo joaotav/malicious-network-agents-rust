@@ -1,5 +1,8 @@
 use std::io::{self, Error, Write};
 use text_colorizer::Colorize;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::spawn;
+use tokio::sync::oneshot;
 
 use crate::agent::Agent;
 use crate::agent_config::AgentConfig;
@@ -23,6 +26,8 @@ pub struct Game {
     /// A vector to store instances of `Agent` that are deployed and ready
     /// to participate in a round of the game.
     active_agents: Vec<Agent>,
+    /// The game's client. Used to communicate with agents.
+    game_client: Client,
 }
 
 impl Game {
@@ -31,6 +36,7 @@ impl Game {
             is_ready: false,
             value: None,
             max_value: None,
+            game_client: Client::new(),
             active_agents: Vec::new(),
         }
     }
@@ -51,10 +57,10 @@ impl Game {
         if self.value == None || self.max_value == None || self.active_agents.len() == 0 {
             panic!("Game cannot be started! Missing game values or active agents.\n");
         }
-        println!("{}\n", "Game is ready!".bold().green());
+        println!("{}\n", "[+] Game is ready!".bold());
     }
 
-    /// Resets all the fields of `Game` to their default values.
+    /// Resets all the fields of `Game` to their default values as specified by `Game::new()`.
     fn reset_game(&mut self) {
         *self = Game::new();
     }
@@ -72,7 +78,7 @@ impl Game {
         for agent in &self.active_agents {
             agents_config.push(agent.to_config());
         }
-        serde_json::to_string(&agents_config)
+        serde_json::to_string_pretty(&agents_config)
     }
 
     /// Calculates and returns the number of honest agents and liars in a game based on
@@ -91,7 +97,10 @@ impl Game {
     /// into `Game.active_agents`.
     fn add_honest_agents(&mut self, value: u64, num_honest: u16) {
         for _ in 1..=num_honest {
-            self.active_agents.push(Agent::new_honest(value));
+            self.active_agents.push(Agent::new_honest(
+                value,
+                self.game_client.keys.get_public_key().to_owned(),
+            ));
         }
     }
 
@@ -99,7 +108,11 @@ impl Game {
     /// into `Game.active_agents`.
     fn add_liar_agents(&mut self, value: u64, max_value: u64, num_liars: u16) {
         for _ in 1..=num_liars {
-            self.active_agents.push(Agent::new_liar(value, max_value));
+            self.active_agents.push(Agent::new_liar(
+                value,
+                max_value,
+                self.game_client.keys.get_public_key().to_owned(),
+            ));
         }
     }
 
@@ -127,15 +140,41 @@ impl Game {
         self.is_ready = true;
     }
 
+    /// Asynchronously spawns tasks for the game agents in `Game.active_agents`. Waits for
+    /// the initialization of all agents before continuing execution.
+    async fn start_game_agents(&self) {
+        let mut ready_signals = Vec::new();
+
+        for agent in &self.active_agents {
+            // Use a oneshot channel to wait for agents to be spawned
+            let (signal_transmitter, signal_receiver) = oneshot::channel();
+            let agent = agent.clone();
+            spawn(async move {
+                agent.start_agent(signal_transmitter).await;
+            });
+            ready_signals.push(signal_receiver);
+        }
+
+        // Wait for all tasks to finish their attempt at spawning an agent
+        for signal_receiver in ready_signals {
+            signal_receiver.await;
+        }
+
+        println!("{}\n", "[+] Finished spawning game agents.".bold());
+    }
+
     /// Executes the `start` command. The `start` command launches a number of independent
     /// agents and produces the `agents.config` file containing information that can be used
     /// to communicate with those agents. It then displays a message to indicate that the
     //  game is ready to be played.
-    pub fn start(&mut self, value: u64, max_value: u64, num_agents: u16, liar_ratio: f32) {
+    pub async fn start(&mut self, value: u64, max_value: u64, num_agents: u16, liar_ratio: f32) {
         if self.is_ready() {
             Game::print_started();
             return;
         }
+
+        println!("{}", "[+] Starting game!\n".bold());
+
         let (num_honest, num_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
 
         // OBS: An improvement would be to shuffle the values or ids of agents in
@@ -145,8 +184,6 @@ impl Game {
         // and the second half all have different values (liars)
         self.add_honest_agents(value, num_honest);
         self.add_liar_agents(value, max_value, num_liars);
-
-        // TODO: self.deploy_agents();
 
         let agent_config = match self.gen_agent_config() {
             Ok(agent_config) => agent_config,
@@ -163,6 +200,7 @@ impl Game {
             return;
         }
 
+        self.start_game_agents().await;
         self.init_game(value, max_value);
         self.print_ready();
     }
@@ -173,11 +211,13 @@ impl Game {
     /// the file, the client must then directly query each individuaal agent for their
     /// value. After collecting the value from every agent, the client must determine
     /// the network value and print it.
-    pub fn play(&self) {
+    pub async fn play(&self) {
         if !self.is_ready() {
             Game::print_not_started();
             return;
         }
+
+        println!("{}", "[+] Playing a standard round...\n".bold());
 
         let mut client = Client::new();
 
@@ -191,7 +231,17 @@ impl Game {
 
         if let Err(e) = client.load_agent_config(&agent_config) {
             println!("error: failed to load data from agents.config - {}\n", e);
+            return;
         }
+
+        println!("{}", "[+] Querying agents for their values...\n".bold());
+
+        match client.play_standard().await {
+            Ok(agent_values) => {
+                Client::print_network_value(&Client::infer_network_value(&agent_values))
+            }
+            Err(e) => println!("{}", e),
+        };
     }
 
     /// Executes the `stop` command. The `stop` command stops all agents listed
@@ -245,7 +295,7 @@ impl Game {
         Ok(user_input.trim().to_owned())
     }
 
-    /// Returns a bool that represents the state of the game
+    /// Returns a bool that represents the state of the game.
     fn is_ready(&self) -> bool {
         self.is_ready
     }
@@ -264,10 +314,13 @@ mod tests {
         let mut game = Game::new();
 
         game.is_ready = true;
-        assert_ne!(game, Game::new());
-
+        game.value = Some(5);
+        game.max_value = Some(10);
         game.reset_game();
-        assert_eq!(game, Game::new());
+
+        assert_ne!(game.is_ready, true);
+        assert_ne!(game.value, Some(5));
+        assert_ne!(game.max_value, Some(10));
     }
 
     #[test]

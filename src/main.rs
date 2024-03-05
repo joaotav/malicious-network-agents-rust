@@ -10,7 +10,9 @@ mod client;
 mod commands;
 mod game;
 mod keys;
+mod message;
 mod network_utils;
+mod packet;
 
 #[tokio::main]
 async fn main() {
@@ -33,8 +35,8 @@ async fn main() {
                     max_value,
                     num_agents,
                     liar_ratio,
-                } => game.start(value, max_value, num_agents, liar_ratio),
-                Commands::Play => game.play(),
+                } => game.start(value, max_value, num_agents, liar_ratio).await,
+                Commands::Play => game.play().await,
                 Commands::Stop => game.stop(),
                 Commands::Extend {
                     num_agents,

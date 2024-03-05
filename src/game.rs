@@ -1,11 +1,9 @@
-use std::io::{self, Error, Write};
+use std::io::{self, Write};
 use text_colorizer::Colorize;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
 use tokio::sync::oneshot;
 
 use crate::agent::Agent;
-use crate::agent_config::AgentConfig;
 use crate::client::Client;
 
 /// Represents the configuration for a game of Liars Lie.

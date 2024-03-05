@@ -1,6 +1,5 @@
-use anyhow::{bail, Context};
-use rand::{seq::SliceRandom, thread_rng, Rng};
-use serde::{Deserialize, Serialize};
+use anyhow::Context;
+use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use text_colorizer::Colorize;
 use tokio::net::{TcpListener, TcpStream};

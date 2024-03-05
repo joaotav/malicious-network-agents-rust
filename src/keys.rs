@@ -1,7 +1,7 @@
 use anyhow::Context;
 use base64::{engine::general_purpose, Engine as _};
 use ring::rand;
-use ring::signature::{self, Ed25519KeyPair, KeyPair};
+use ring::signature::{self, KeyPair};
 use serde::{Deserialize, Serialize};
 /// Represents an Ed25519 key pair
 ///

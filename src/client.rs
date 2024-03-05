@@ -1,10 +1,9 @@
 use anyhow::{bail, Context};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use text_colorizer::Colorize;
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io;
+use tokio::net::TcpStream;
 use tokio::spawn;
 
 use crate::agent_config::AgentConfig;
@@ -182,7 +181,7 @@ impl Client {
     /// returns a Vec<u64> containing all valid agent replies. A reply is valid iff
     /// the received message is not corrupted and it has been signed by the agent to which
     /// the query was sent.
-    pub async fn play_standard(&self) -> anyhow::Result<(Vec<u64>)> {
+    pub async fn play_standard(&self) -> anyhow::Result<Vec<u64>> {
         let mut agent_conn_handles = Vec::new();
         let mut agent_values = Vec::new();
 
@@ -216,8 +215,6 @@ impl Client {
             }
         }
 
-        // Self::print_network_value(&Self::infer_network_value(&agent_values));
-
-        Ok((agent_values))
+        Ok(agent_values)
     }
 }

@@ -1,4 +1,3 @@
-use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 /// Represents an instance of `Agent` in a format that can be shared with
 /// other participants of the game.

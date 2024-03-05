@@ -1,7 +1,5 @@
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::spawn;
-
+use tokio::net::TcpStream;
 /// Returns the length of `data` as a big-endian 4 bytes array.
 pub fn get_length(data: &[u8]) -> [u8; 4] {
     (data.len() as u32).to_be_bytes()

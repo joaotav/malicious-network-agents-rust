@@ -26,7 +26,7 @@ pub async fn read_length_prefix(socket: &mut TcpStream) -> Result<usize, io::Err
     socket
         .read_exact(&mut buffer_length)
         .await
-        .expect("error: failed to read data from socket\n");
+        .expect("[!] error: failed to read data from socket\n");
 
     let packet_length = u32::from_be_bytes(buffer_length) as usize;
     Ok(packet_length)

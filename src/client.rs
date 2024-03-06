@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use std::collections::HashMap;
 use std::fs;
+use std::sync::Arc;
 use text_colorizer::Colorize;
 use tokio::io;
 use tokio::net::TcpStream;
@@ -42,9 +43,16 @@ impl Client {
     }
 
     /// Receives a string slice containing the data read from `agents.config`
-    //  and attempts to deserialize and store it in Client.peers
-    pub fn load_agent_config(&mut self, agent_config: &str) -> Result<(), serde_json::Error> {
+    /// and attempts to deserialize and store it in Client.peers
+    pub fn store_agent_config(&mut self, agent_config: &str) -> Result<(), serde_json::Error> {
         self.peers = serde_json::from_str(&agent_config)?;
+        Ok(())
+    }
+
+    /// Reads agent configuration from a file and stores it in an instance of `Client`.
+    pub fn load_agent_config(&mut self) -> anyhow::Result<()> {
+        let agent_config = Self::read_agent_config()?;
+        self.store_agent_config(&agent_config)?;
         Ok(())
     }
 
@@ -63,7 +71,7 @@ impl Client {
             Keys::verify(message_bytes, signature, public_key)?;
         } else {
             bail!(
-                "error: MsgSendValue requires a signature, but the received packet contains None\n"
+                "[!] error: MsgSendValue requires a signature, but the received packet contains None\n"
             );
         }
 
@@ -140,22 +148,22 @@ impl Client {
 
     /// Queries an individual agent for its value by sending a `MsgQueryValue`.
     async fn query_agent_value(
-        client_keys: Keys,
+        client_keys: &Keys,
         socket: &mut TcpStream,
-        agent_pubkey: String,
+        agent_pubkey: &str,
     ) -> anyhow::Result<u64> {
-        let message =
-            Message::build_msg_query_value().context("error: failed to build MsgQueryValue\n")?;
+        let message = Message::build_msg_query_value()
+            .context("[!] error: failed to build MsgQueryValue\n")?;
 
         // Compute the signature of the serialized message
-        // OBS: For messages composed by large amounts of data, signing the whole message incurs
+        // NOTE: For messages composed by large amounts of data, signing the whole message incurs
         // a significant overhead. Ideally, the hash of  the message should be signed instead.
         // Here, given the small sizes of messages, we sign the whole message for simplicity's sake.
         let message_signature = client_keys.sign(&message)?;
 
         // Build a packet with the message and message signature
         let packet = Packet::build_packet(message, Some(message_signature))
-            .context("error: failed to build packet\n")?;
+            .context("[!] error: failed to build packet\n")?;
 
         send_packet(&packet, socket).await?;
 
@@ -167,12 +175,32 @@ impl Client {
             Ok(Message::MsgSendValue { value, agent_id }) => Self::handle_msg_send_value(
                 &reply_packet.message,
                 &reply_packet.msg_sig,
-                &agent_pubkey,
+                agent_pubkey,
                 value,
                 agent_id,
             ),
-            Ok(other) => bail!("error: expected MsgSendValue, received {:?}\n", other),
-            Err(e) => bail!("error: unable to decode message - {}\n", e),
+            Ok(other) => bail!("[!] error: expected MsgSendValue, received {:?}\n", other),
+            Err(e) => bail!("[!] error: unable to decode message - {}\n", e),
+        }
+    }
+
+    /// Builds and sends a MsgKillAgent to an active agent. This message does not expect a reply.
+    async fn kill_agent(
+        agent_id: usize,
+        client_keys: &Keys,
+        socket: &mut TcpStream,
+    ) -> anyhow::Result<()> {
+        let message = Message::build_msg_kill_agent(agent_id)
+            .context("[!] error: failed to build MsgKillAgent\n")?;
+
+        let message_signature = client_keys.sign(&message)?;
+
+        let packet = Packet::build_packet(message, Some(message_signature))
+            .context("[!] error: failed to build packet\n")?;
+
+        match send_packet(&packet, socket).await {
+            Ok(()) => Ok(()),
+            Err(e) => bail!("[!] error: unable to reach agent {} - {}", agent_id, e),
         }
     }
 
@@ -184,23 +212,29 @@ impl Client {
     pub async fn play_standard(&self) -> anyhow::Result<Vec<u64>> {
         let mut agent_conn_handles = Vec::new();
         let mut agent_values = Vec::new();
+        let keys = Arc::new(self.keys.clone());
 
         for peer in &self.peers {
-            let address = peer.get_address().to_owned();
-            let port = peer.get_port().to_owned();
-
-            let mut socket = match connect(&address, port).await {
+            let address = peer.get_address();
+            let port = peer.get_port();
+            let mut socket = match connect(address, port).await {
                 Ok(socket) => socket,
                 Err(e) => {
-                    println!("error: failed to connect to {}:{} - {}\n", address, port, e);
+                    println!(
+                        "[!] error: failed to connect to agent {} ({}:{}) - {}\n",
+                        peer.get_id(),
+                        address,
+                        port,
+                        e
+                    );
                     continue;
                 }
             };
 
             let agent_pubkey = peer.get_public_key().to_owned();
-            let client_keys = self.keys.clone();
+            let client_keys = keys.clone();
             let handle = spawn(async move {
-                Self::query_agent_value(client_keys, &mut socket, agent_pubkey).await
+                Self::query_agent_value(&client_keys, &mut socket, &agent_pubkey).await
             });
             agent_conn_handles.push(handle);
         }
@@ -216,5 +250,42 @@ impl Client {
         }
 
         Ok(agent_values)
+    }
+
+    /// Connects to and sends a MsgKillAgent to every agent whose information is stored
+    /// in `Client.peers`.
+    pub async fn stop_agents(&self) {
+        let mut agent_conn_handles = Vec::new();
+        let keys = Arc::new(self.keys.clone());
+
+        for peer in &self.peers {
+            let address = peer.get_address();
+            let port = peer.get_port();
+            let agent_id = peer.get_id();
+
+            let mut socket = match connect(address, port).await {
+                Ok(socket) => socket,
+                Err(e) => {
+                    println!(
+                        "[!] error: failed to connect to {}:{} - {}\n",
+                        address, port, e
+                    );
+                    continue;
+                }
+            };
+
+            let client_keys = keys.clone();
+            let handle =
+                spawn(async move { Self::kill_agent(agent_id, &client_keys, &mut socket).await });
+            agent_conn_handles.push(handle);
+        }
+
+        for handle in agent_conn_handles {
+            match handle.await {
+                Ok(Ok(())) => (),
+                Ok(Err(e)) => println!("{}", e),
+                Err(e) => println!("Task panicked: {}\n", e),
+            }
+        }
     }
 }

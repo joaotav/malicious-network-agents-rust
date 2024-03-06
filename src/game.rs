@@ -41,6 +41,7 @@ impl Game {
 
     pub fn print_welcome() {
         println!("\n{}\n", ">>>>> Welcome to Liars Lie! <<<<<".bold().green());
+        println!("{}\n", "Type 'help' for a list of commands.".bold());
     }
 
     fn print_started() {
@@ -66,6 +67,12 @@ impl Game {
     /// Attempts to write data to the `agents.config` file.
     fn write_agent_config(agents_config: &str) -> std::io::Result<()> {
         std::fs::write("agents.config", agents_config)?;
+        Ok(())
+    }
+
+    /// Attempts to delete the `agents.config` file.
+    fn remove_agent_config() -> std::io::Result<()> {
+        std::fs::remove_file("agents.config")?;
         Ok(())
     }
 
@@ -142,7 +149,7 @@ impl Game {
     /// the initialization of all agents before continuing execution.
     async fn start_game_agents(&self) {
         let mut ready_signals = Vec::new();
-
+        let mut spawned_count = 0;
         for agent in &self.active_agents {
             // Use a oneshot channel to wait for agents to be spawned
             let (signal_transmitter, signal_receiver) = oneshot::channel();
@@ -155,10 +162,18 @@ impl Game {
 
         // Wait for all tasks to finish their attempt at spawning an agent
         for signal_receiver in ready_signals {
-            signal_receiver.await;
+            match signal_receiver.await {
+                Ok(()) => spawned_count += 1,
+                Err(e) => continue,
+            }
         }
 
-        println!("{}\n", "[+] Finished spawning game agents.".bold());
+        println!(
+            "{}{}{}\n",
+            "[+] Sucessfully spawned ".bold(),
+            spawned_count,
+            " game agents!".bold()
+        );
     }
 
     /// Executes the `start` command. The `start` command launches a number of independent
@@ -175,7 +190,7 @@ impl Game {
 
         let (num_honest, num_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
 
-        // OBS: An improvement would be to shuffle the values or ids of agents in
+        // NOTE: An improvement would be to shuffle the values or ids of agents in
         // active_agents to prevent honest agents and liars from being identified
         // by looking at the agents.config file. E.g, given a vector with agent_ids
         // in an increasing order, the first half of agents all have the same value (honest)
@@ -187,14 +202,14 @@ impl Game {
             Ok(agent_config) => agent_config,
             Err(e) => {
                 self.reset_game();
-                println!("error: failed to generate agent configuration - {}", e);
+                println!("[!] error: failed to generate agent configuration - {}", e);
                 return;
             }
         };
 
         if let Err(e) = Self::write_agent_config(&agent_config) {
             self.reset_game();
-            println!("error: failed to write agents.config file - {}", e);
+            println!("[!] error: failed to write agents.config file - {}", e);
             return;
         }
 
@@ -217,16 +232,11 @@ impl Game {
 
         println!("{}", "[+] Playing a standard round...\n".bold());
 
-        let agent_config = match Client::read_agent_config() {
-            Ok(agent_config) => agent_config,
-            Err(e) => {
-                println!("error: failed to read agents.config file - {}\n", e);
-                return;
-            }
-        };
-
-        if let Err(e) = self.game_client.load_agent_config(&agent_config) {
-            println!("error: failed to load data from agents.config - {}\n", e);
+        if let Err(e) = self.game_client.load_agent_config() {
+            println!(
+                "[!] error: failed to load data from agents.config - {}\n",
+                e
+            );
             return;
         }
 
@@ -243,8 +253,29 @@ impl Game {
     /// Executes the `stop` command. The `stop` command stops all agents listed
     /// in the `agents.config`file, removes all agent information from the same file,
     /// and exit from the program.
-    pub fn stop(&self) {
-        todo!()
+    pub async fn stop(&mut self) {
+        if self.is_ready() {
+            // Load agent information from agents.config, as the game may have been extended but not
+            // played, causing the client's information on agents to be outdated.
+            if let Err(e) = self.game_client.load_agent_config() {
+                println!(
+                    "[!] error: failed to load data from agents.config - {}\n",
+                    e
+                );
+                return;
+            }
+
+            self.game_client.stop_agents().await;
+
+            println!("{}", "[+] Stopping all agents...\n".bold());
+
+            if let Err(e) = Self::remove_agent_config() {
+                println!("[!] error: unable to remove agents.config file - {}\n", e);
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::process::exit(0);
     }
 
     /// Executes the `extend` command. The `extend` command checks for the existence of
@@ -273,7 +304,7 @@ impl Game {
 
     /// Executes the `kill` command. The `kill` command receives an agent ID as an argument
     /// and kills the corresponding agent, but does not modify the `agents.config` file.
-    pub fn kill(&mut self, agent_id: u16) {
+    pub fn kill(&mut self, agent_id: usize) {
         if !self.is_ready() {
             Game::print_not_started();
             return;

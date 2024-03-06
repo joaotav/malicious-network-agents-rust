@@ -8,11 +8,10 @@ pub enum Message {
     MsgQueryValue,
     /// Used by an agent to send its value as a reply to a `MsgQueryValue`.
     MsgSendValue { value: u64, agent_id: usize },
-    /// Used by the game's client to request agents to stop gracefully.
-    MsgShutdown { agent_id: usize },
     /// Used by the game's client to kill an active agent.
     MsgKillAgent { agent_id: usize },
 }
+// NOTE: It would be an improvement to include nonces in messages in order to prevent replay attacks.
 
 impl Message {
     /// Builds and returns a MsgQueryValue serialized into binary format using bincode.
@@ -26,6 +25,11 @@ impl Message {
     /// binary format.
     pub fn build_msg_send_value(value: u64, agent_id: usize) -> Result<Vec<u8>, bincode::Error> {
         let message = Message::MsgSendValue { value, agent_id }.serialize_message()?;
+        Ok(message)
+    }
+
+    pub fn build_msg_kill_agent(agent_id: usize) -> Result<Vec<u8>, bincode::Error> {
+        let message = Message::MsgKillAgent { agent_id }.serialize_message()?;
         Ok(message)
     }
 

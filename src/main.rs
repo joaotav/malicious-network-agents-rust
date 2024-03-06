@@ -36,7 +36,7 @@ async fn main() {
                     liar_ratio,
                 } => game.start(value, max_value, num_agents, liar_ratio).await,
                 Commands::Play => game.play().await,
-                Commands::Stop => game.stop(),
+                Commands::Stop => game.stop().await,
                 Commands::Extend {
                     num_agents,
                     liar_ratio,

@@ -55,7 +55,7 @@ pub enum Commands {
     Kill {
         /// The ID of the agent to be killed
         #[arg(long = "id")]
-        agent_id: u16,
+        agent_id: usize,
     },
 }
 
@@ -117,7 +117,7 @@ impl Commands {
         match self.has_liar_ratio() {
             Some(liar_ratio) if (0.0..=1.0).contains(&liar_ratio) => Ok(()),
             Some(_) => Err(
-                "error: --liar-ratio must be within the range of 0.0 to 1.0 (inclusive)\n"
+                "[!] error: --liar-ratio must be within the range of 0.0 to 1.0 (inclusive)\n"
                     .to_string(),
             ),
             None => Ok(()),
@@ -142,15 +142,15 @@ impl Commands {
         };
 
         if value == 0 {
-            return Err("error: --value must be greater than 0\n".to_owned());
+            return Err("[!] error: --value must be greater than 0\n".to_owned());
         }
 
         if value > max_value {
-            return Err("error: --value cannot be greater than --max-value\n".to_owned());
+            return Err("[!] error: --value cannot be greater than --max-value\n".to_owned());
         }
 
         if max_value == 1 {
-            return Err("error: --max-value must be greater than 1\n".to_owned());
+            return Err("[!] error: --max-value must be greater than 1\n".to_owned());
         }
 
         Ok(())
@@ -161,7 +161,7 @@ impl Commands {
     fn validate_num_agents(&self) -> Result<(), String> {
         match self.has_num_agents() {
             Some(num_agents) if (num_agents > 0) => Ok(()),
-            Some(_) => Err("error: --num-agents must be greater than 0\n".to_owned()),
+            Some(_) => Err("[!] error: --num-agents must be greater than 0\n".to_owned()),
             None => Ok(()),
         }
     }

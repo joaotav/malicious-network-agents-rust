@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use std::collections::HashMap;
 use std::fs;
+use std::ops::Deref;
 use std::sync::Arc;
 use text_colorizer::Colorize;
 use tokio::io;
@@ -12,7 +13,6 @@ use crate::keys::Keys;
 use crate::message::Message;
 use crate::network_utils::*;
 use crate::packet::Packet;
-
 /// Represents a game client.
 ///
 /// `Client`s are responsible for communicating with deployed agents
@@ -20,9 +20,9 @@ use crate::packet::Packet;
 #[derive(Debug, PartialEq)]
 pub struct Client {
     /// The client's Ed25519 key pair. Used for message authentication.
-    pub keys: Keys,
+    keys: Keys,
     /// A vector containing information that allows the client to communicate with agents.
-    pub peers: Vec<AgentConfig>,
+    peers: Vec<AgentConfig>,
 }
 
 impl Client {
@@ -33,6 +33,14 @@ impl Client {
             keys: Keys::new_key_pair(),
             peers: Vec::new(),
         }
+    }
+
+    pub fn get_keys(&self) -> &Keys {
+        &self.keys
+    }
+
+    pub fn get_peers(&self) -> &Vec<AgentConfig> {
+        &self.peers
     }
 
     /// Attempts to read the `AgentConfig` data from the `agents.config` file
@@ -147,7 +155,7 @@ impl Client {
     }
 
     /// Queries an individual agent for its value by sending a `MsgQueryValue`.
-    async fn query_agent_value(
+    async fn send_msg_query_value(
         client_keys: &Keys,
         socket: &mut TcpStream,
         agent_pubkey: &str,
@@ -185,7 +193,7 @@ impl Client {
     }
 
     /// Builds and sends a MsgKillAgent to an active agent. This message does not expect a reply.
-    async fn kill_agent(
+    async fn send_msg_kill_agent(
         agent_id: usize,
         client_keys: &Keys,
         socket: &mut TcpStream,
@@ -221,7 +229,7 @@ impl Client {
                 Ok(socket) => socket,
                 Err(e) => {
                     println!(
-                        "[!] error: failed to connect to agent {} ({}:{}) - {}\n",
+                        "[!] error: failed to connect to (Agent ID: {} - {}:{}) - {}\n",
                         peer.get_id(),
                         address,
                         port,
@@ -234,7 +242,7 @@ impl Client {
             let agent_pubkey = peer.get_public_key().to_owned();
             let client_keys = keys.clone();
             let handle = spawn(async move {
-                Self::query_agent_value(&client_keys, &mut socket, &agent_pubkey).await
+                Self::send_msg_query_value(&client_keys, &mut socket, &agent_pubkey).await
             });
             agent_conn_handles.push(handle);
         }
@@ -245,47 +253,49 @@ impl Client {
                     agent_values.push(agent_value);
                 }
                 Ok(Err(e)) => println!("{}", e),
-                Err(e) => println!("Task panicked: {}\n", e),
+                Err(e) => println!("[!] error: task panicked - {}\n", e),
             }
         }
 
         Ok(agent_values)
     }
 
-    /// Connects to and sends a MsgKillAgent to every agent whose information is stored
-    /// in `Client.peers`.
-    pub async fn stop_agents(&self) {
-        let mut agent_conn_handles = Vec::new();
-        let keys = Arc::new(self.keys.clone());
-
-        for peer in &self.peers {
-            let address = peer.get_address();
-            let port = peer.get_port();
-            let agent_id = peer.get_id();
-
-            let mut socket = match connect(address, port).await {
-                Ok(socket) => socket,
-                Err(e) => {
-                    println!(
-                        "[!] error: failed to connect to {}:{} - {}\n",
-                        address, port, e
-                    );
-                    continue;
-                }
-            };
-
-            let client_keys = keys.clone();
-            let handle =
-                spawn(async move { Self::kill_agent(agent_id, &client_keys, &mut socket).await });
-            agent_conn_handles.push(handle);
-        }
-
-        for handle in agent_conn_handles {
-            match handle.await {
-                Ok(Ok(())) => (),
-                Ok(Err(e)) => println!("{}", e),
-                Err(e) => println!("Task panicked: {}\n", e),
+    /// Connects to `address`:`port` and sends a MsgKillAgent addressed to `agent_id`.
+    pub async fn kill_agent(
+        &self,
+        agent_id: usize,
+        address: &str,
+        port: usize,
+    ) -> anyhow::Result<String> {
+        let mut socket = match connect(address, port).await {
+            Ok(socket) => socket,
+            Err(e) => {
+                bail!(
+                    "[!] error: failed to connect to {}:{} - {}\n",
+                    address,
+                    port,
+                    e
+                )
             }
+        };
+
+        let client_keys = self.keys.clone();
+
+        let handle =
+            spawn(
+                async move { Self::send_msg_kill_agent(agent_id, &client_keys, &mut socket).await },
+            );
+
+        match handle.await {
+            Ok(Ok(())) => Ok(format!(
+                "{} (Agent ID: {} - {}:{})\n",
+                "[+] Killed agent".bold(),
+                agent_id,
+                address,
+                port
+            )),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 }

@@ -45,7 +45,7 @@ async fn main() {
                     num_agents,
                     liar_ratio,
                 } => game.play_expert(num_agents, liar_ratio),
-                Commands::Kill { agent_id } => game.kill(agent_id),
+                Commands::Kill { agent_id } => game.kill(agent_id).await,
             },
 
             Err(e) => {

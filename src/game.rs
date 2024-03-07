@@ -104,7 +104,7 @@ impl Game {
         for _ in 1..=num_honest {
             self.active_agents.push(Agent::new_honest(
                 value,
-                self.game_client.keys.get_public_key().to_owned(),
+                self.game_client.get_keys().get_public_key().to_owned(),
             ));
         }
     }
@@ -116,7 +116,7 @@ impl Game {
             self.active_agents.push(Agent::new_liar(
                 value,
                 max_value,
-                self.game_client.keys.get_public_key().to_owned(),
+                self.game_client.get_keys().get_public_key().to_owned(),
             ));
         }
     }
@@ -265,19 +265,54 @@ impl Game {
                 return;
             }
 
-            self.game_client.stop_agents().await;
-
             println!("{}", "[+] Stopping all agents...\n".bold());
+
+            // Send a MsgKillAgent to every agent in the game client's list of peers
+            for agent in self.game_client.get_peers() {
+                match self
+                    .game_client
+                    .kill_agent(agent.get_id(), agent.get_address(), agent.get_port())
+                    .await
+                {
+                    Ok(_) => (),
+                    Err(e) => println!("{}", e),
+                }
+            }
 
             if let Err(e) = Self::remove_agent_config() {
                 println!("[!] error: unable to remove agents.config file - {}\n", e);
             }
         }
-
         std::thread::sleep(std::time::Duration::from_secs(2));
         std::process::exit(0);
     }
 
+    /// Executes the `kill` command. The `kill` command receives an agent ID as an argument
+    /// and kills the corresponding agent, but does not modify the `agents.config` file.
+    pub async fn kill(&mut self, target_id: usize) {
+        if !self.is_ready() {
+            Game::print_not_started();
+            return;
+        }
+
+        // Check if the provided `target_id` corresponds to the ID of an an active agent
+        if let Some((address, port)) = self
+            .active_agents
+            .iter()
+            .find(|agent| agent.get_id() == target_id)
+            .map(|agent| (agent.get_address(), agent.get_port()))
+        {
+            match self.game_client.kill_agent(target_id, address, port).await {
+                Ok(success_msg) => println!("{}", success_msg),
+                Err(e) => println!("{}", e),
+            }
+        } else {
+            println!(
+                "[!] error: the ID '{}' does not correspond to any active agent\n",
+                target_id
+            );
+        }
+    }
     /// Executes the `extend` command. The `extend` command checks for the existence of
     /// the `agents.config` file, and if present, extends it by launching new honest
     /// agents and liars.
@@ -295,16 +330,6 @@ impl Game {
     /// query a subset of the currently deployed agents, the size of which is taken as
     /// an argument by `fn play_expert()`.
     pub fn play_expert(&self, num_agents: u16, liar_ratio: f32) {
-        if !self.is_ready() {
-            Game::print_not_started();
-            return;
-        }
-        todo!()
-    }
-
-    /// Executes the `kill` command. The `kill` command receives an agent ID as an argument
-    /// and kills the corresponding agent, but does not modify the `agents.config` file.
-    pub fn kill(&mut self, agent_id: usize) {
         if !self.is_ready() {
             Game::print_not_started();
             return;

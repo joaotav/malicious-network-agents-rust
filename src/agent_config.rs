@@ -30,7 +30,7 @@ impl AgentConfig {
         }
     }
 
-    pub fn get_address(&self) -> &String {
+    pub fn get_address(&self) -> &str {
         &self.address
     }
 
@@ -42,7 +42,7 @@ impl AgentConfig {
         self.port
     }
 
-    pub fn get_public_key(&self) -> &String {
+    pub fn get_public_key(&self) -> &str {
         &self.public_key
     }
 }

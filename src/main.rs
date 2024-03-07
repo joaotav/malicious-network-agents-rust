@@ -40,7 +40,7 @@ async fn main() {
                 Commands::Extend {
                     num_agents,
                     liar_ratio,
-                } => game.extend(num_agents, liar_ratio),
+                } => game.extend(num_agents, liar_ratio).await,
                 Commands::PlayExpert {
                     num_agents,
                     liar_ratio,

@@ -86,6 +86,11 @@ impl Game {
         serde_json::to_string_pretty(&agents_config)
     }
 
+    // Checks if the `agents.config` file exists in the current directory
+    fn agent_config_exists() -> bool {
+        std::path::Path::new("agents.config").is_file()
+    }
+
     /// Calculates and returns the number of honest agents and liars in a game based on
     /// the total number of agents represented by `num_agents` and the percentage of liars
     /// represented by `liar_ratio`. `num_liars` is truncated, e.g, if `num_agents` is 6
@@ -145,26 +150,41 @@ impl Game {
         self.is_ready = true;
     }
 
-    /// Asynchronously spawns tasks for the game agents in `Game.active_agents`. Waits for
-    /// the initialization of all agents before continuing execution.
-    async fn start_game_agents(&self) {
+    fn get_active_agents(&self) -> &Vec<Agent> {
+        &self.active_agents
+    }
+
+    /// Asynchronously spawns tasks for the uninitialized game agents in `Game.active_agents`. Waits
+    /// for the initialization of all agents before continuing execution.
+    async fn start_game_agents(&mut self) {
         let mut ready_signals = Vec::new();
         let mut spawned_count = 0;
         for agent in &self.active_agents {
-            // Use a oneshot channel to wait for agents to be spawned
-            let (signal_transmitter, signal_receiver) = oneshot::channel();
-            let agent = agent.clone();
-            spawn(async move {
-                agent.start_agent(signal_transmitter).await;
-            });
-            ready_signals.push(signal_receiver);
+            if !agent.is_ready() {
+                // Use a oneshot channel to wait for agents to be spawned
+                let (signal_transmitter, signal_receiver) = oneshot::channel();
+                let agent = agent.clone();
+                spawn(async move {
+                    agent.start_agent(signal_transmitter).await;
+                });
+                ready_signals.push(signal_receiver);
+            }
         }
 
         // Wait for all tasks to finish their attempt at spawning an agent
         for signal_receiver in ready_signals {
             match signal_receiver.await {
-                Ok(()) => spawned_count += 1,
-                Err(e) => continue,
+                Ok(spawned_id) => {
+                    if let Some(index) = self
+                        .get_active_agents()
+                        .iter()
+                        .position(|agent| agent.get_id() == spawned_id)
+                    {
+                        self.active_agents[index].set_ready();
+                        spawned_count += 1;
+                    }
+                }
+                Err(e) => println!("{}", e),
             }
         }
 
@@ -240,7 +260,12 @@ impl Game {
             return;
         }
 
-        println!("{}", "[+] Querying agents for their values...\n".bold());
+        println!(
+            "{}{}{}\n",
+            "[+] Querying ".bold(),
+            self.game_client.get_peers().len(),
+            " agents for their values...".bold()
+        );
 
         match self.game_client.play_standard().await {
             Ok(agent_values) => {
@@ -314,14 +339,52 @@ impl Game {
         }
     }
     /// Executes the `extend` command. The `extend` command checks for the existence of
-    /// the `agents.config` file, and if present, extends it by launching new honest
-    /// agents and liars.
-    pub fn extend(&mut self, num_agents: u16, liar_ratio: f32) {
-        if !self.is_ready() {
+    /// the `agents.config` file, and if present, extends it by launching new agents.
+    pub async fn extend(&mut self, num_agents: u16, liar_ratio: f32) {
+        if !self.is_ready() || !Self::agent_config_exists() {
             Game::print_not_started();
             return;
         }
-        todo!()
+
+        let (num_honest, num_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
+
+        // Backup and revert to current agents in case something goes wrong during agent generation
+        let agents_backup = self.active_agents.clone();
+
+        // self.value and self.max_value should not be None since self.is_ready() == true,
+        // however, test anyway to print the error instead of panicking with expect()
+        if let (Some(value), Some(max_value)) = (self.value, self.max_value) {
+            self.add_honest_agents(value, num_honest);
+            self.add_liar_agents(value, max_value, num_liars);
+        } else {
+            println!("[!] Unable to extend game; missing game settings.");
+            return;
+        }
+
+        let agent_config = match self.gen_agent_config() {
+            Ok(agent_config) => agent_config,
+            Err(e) => {
+                // If new agents were added, but could not be added to the config, revert
+                // `Game.active_agents` to a previous state, before their addition.
+                self.active_agents = agents_backup;
+                println!(
+                    "[!] error: unable to extend game; failed to generate agent configuration - {}\n",
+                    e
+                );
+                return;
+            }
+        };
+
+        if let Err(e) = Self::write_agent_config(&agent_config) {
+            self.active_agents = agents_backup;
+            println!(
+                "[!] error: unable to extend game; failed to write agents.config file - {}\n",
+                e
+            );
+            return;
+        }
+
+        self.start_game_agents().await;
     }
 
     /// Executes the `playexpert` command. The `playexpert` command plays a round of the

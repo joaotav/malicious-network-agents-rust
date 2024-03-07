@@ -43,6 +43,8 @@ pub struct Agent {
     keys: Keys,
     /// The game client's base64-encoded public key. Used to authenticate received messages.
     game_client_pubkey: String,
+    /// A flag to indicate whether this agent has been deployed or not.
+    is_ready: bool,
 }
 
 impl Agent {
@@ -61,6 +63,7 @@ impl Agent {
             port,
             keys,
             game_client_pubkey,
+            is_ready: false,
         }
     }
 
@@ -80,7 +83,12 @@ impl Agent {
             port,
             keys,
             game_client_pubkey,
+            is_ready: false,
         }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.is_ready
     }
 
     pub fn get_id(&self) -> usize {
@@ -93,6 +101,10 @@ impl Agent {
 
     pub fn get_port(&self) -> usize {
         self.port
+    }
+
+    pub fn set_ready(&mut self) {
+        self.is_ready = true
     }
     /// Receives an instance of `Agent` to generate a new instance of `AgentConfig`,
     /// which contains only the fields of `Agent` that can be shared with other
@@ -194,7 +206,7 @@ impl Agent {
     /// Spawns a task to execute an instance of `Agent` and listen for incoming communication
     /// requests. The agent is bound to a network address specified by the fields `Agent.address`
     /// and `Agent.port`.
-    pub async fn start_agent(&self, ready_signal: oneshot::Sender<()>) {
+    pub async fn start_agent(&self, ready_signal: oneshot::Sender<usize>) {
         let listener = TcpListener::bind(format!("{}:{}", self.address, self.port)).await;
         let listener = match listener {
             Ok(listener) => listener,
@@ -217,7 +229,7 @@ impl Agent {
 
         // Send a signal back to the calling function to inform that the agent has been spawned and
         // execution may continue
-        ready_signal.send(());
+        ready_signal.send(self.agent_id);
 
         let cancellation_token = CancellationToken::new();
 

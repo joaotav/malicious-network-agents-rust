@@ -3,7 +3,6 @@ use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use text_colorizer::Colorize;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::select;
 use tokio::spawn;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -84,6 +83,17 @@ impl Agent {
         }
     }
 
+    pub fn get_id(&self) -> usize {
+        self.agent_id
+    }
+
+    pub fn get_address(&self) -> &str {
+        &self.address
+    }
+
+    pub fn get_port(&self) -> usize {
+        self.port
+    }
     /// Receives an instance of `Agent` to generate a new instance of `AgentConfig`,
     /// which contains only the fields of `Agent` that can be shared with other
     /// participants of the game.

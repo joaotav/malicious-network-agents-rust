@@ -30,18 +30,22 @@ impl AgentConfig {
         }
     }
 
+    /// Returns an agent's network address.
     pub fn get_address(&self) -> &str {
         &self.address
     }
 
+    /// Returns an agent's unique ID.
     pub fn get_id(&self) -> usize {
         self.agent_id
     }
 
+    /// Returns the port at which an agent is listening on `Agent.address`.
     pub fn get_port(&self) -> usize {
         self.port
     }
 
+    /// Returns an agent's base64-encoded public key. Can be used for message authentication.
     pub fn get_public_key(&self) -> &str {
         &self.public_key
     }

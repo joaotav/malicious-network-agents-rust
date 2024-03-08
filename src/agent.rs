@@ -87,22 +87,27 @@ impl Agent {
         }
     }
 
+    /// Gets an agent's status. Returns `true` the agent has been spawned and `false` otherwise.
     pub fn is_ready(&self) -> bool {
         self.is_ready
     }
 
+    /// Returns an agent's unique ID.
     pub fn get_id(&self) -> usize {
         self.agent_id
     }
 
+    /// Returns an agent's network address.
     pub fn get_address(&self) -> &str {
         &self.address
     }
 
+    /// Returns the port at which an agent is listening on `Agent.address`.
     pub fn get_port(&self) -> usize {
         self.port
     }
 
+    /// Sets an agent's status to ready. Used to indicate the agent has been spawned as a node.
     pub fn set_ready(&mut self) {
         self.is_ready = true
     }

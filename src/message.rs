@@ -28,6 +28,8 @@ impl Message {
         Ok(message)
     }
 
+    /// Builds a `MsgKillAgent` containing the identifier of the agent to be killed, `agent_id`.
+    /// Returns the message serialized into binary format.
     pub fn build_msg_kill_agent(agent_id: usize) -> Result<Vec<u8>, bincode::Error> {
         let message = Message::MsgKillAgent { agent_id }.serialize_message()?;
         Ok(message)

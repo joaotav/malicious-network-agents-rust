@@ -134,22 +134,25 @@ impl Game {
         self.set_ready();
     }
 
-    /// A setter function for `Game.value`
+    /// A setter method for `Game.value`. Used to store the `max_value` used for agents when
+    /// the game was started.
     // May not be idiomatic Rust, see: https://www.reddit.com/r/rust/comments/d7w6n7
     fn set_value(&mut self, value: u64) {
         self.value = Some(value);
     }
 
-    /// A setter function for `Game.max_value`
+    /// A setter method for `Game.max_value`. Used to store the `max_value` used for agents when
+    /// the game was started.
     fn set_max_value(&mut self, max_value: u64) {
         self.max_value = Some(max_value);
     }
 
-    /// A setter function for `Game.is_ready`
+    /// Sets `Game.is_ready` to `true`, indicating that the game is ready to be played.
     fn set_ready(&mut self) {
         self.is_ready = true;
     }
 
+    /// Returns the game's list of active agents.
     fn get_active_agents(&self) -> &Vec<Agent> {
         &self.active_agents
     }
@@ -214,7 +217,7 @@ impl Game {
         // active_agents to prevent honest agents and liars from being identified
         // by looking at the agents.config file. E.g, given a vector with agent_ids
         // in an increasing order, the first half of agents all have the same value (honest)
-        // and the second half all have different values (liars)
+        // and the second half all have different values (liars).
         self.add_honest_agents(value, num_honest);
         self.add_liar_agents(value, max_value, num_liars);
 
@@ -348,7 +351,8 @@ impl Game {
 
         let (num_honest, num_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
 
-        // Backup and revert to current agents in case something goes wrong during agent generation
+        // Backup and revert to current agents if something goes wrong after agents are added
+        // but have not yet been spawned.
         let agents_backup = self.active_agents.clone();
 
         // self.value and self.max_value should not be None since self.is_ready() == true,

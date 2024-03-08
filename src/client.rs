@@ -35,10 +35,12 @@ impl Client {
         }
     }
 
+    /// Returns the client's keypair for message signing.
     pub fn get_keys(&self) -> &Keys {
         &self.keys
     }
 
+    /// Returns the client's list of peers.
     pub fn get_peers(&self) -> &Vec<AgentConfig> {
         &self.peers
     }

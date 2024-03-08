@@ -44,9 +44,16 @@ pub struct Agent {
     /// The game client's base64-encoded public key. Used to authenticate received messages.
     game_client_pubkey: String,
     /// A flag to indicate whether this agent has been deployed or not.
-    is_ready: bool,
+    status: AgentStatus,
     /// A flag to indicate whether this agent is a liar or not.
     is_liar: bool,
+}
+
+#[derive(PartialEq, Clone, Debug, Copy)]
+pub enum AgentStatus {
+    Uninitialized,
+    Ready,
+    Killed,
 }
 
 impl Agent {
@@ -58,7 +65,7 @@ impl Agent {
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
         let keys = Keys::new_key_pair();
-        let is_ready = false;
+        let status = AgentStatus::Uninitialized;
         let is_liar = false;
         Agent {
             agent_id,
@@ -67,7 +74,7 @@ impl Agent {
             port,
             keys,
             game_client_pubkey,
-            is_ready,
+            status,
             is_liar,
         }
     }
@@ -81,7 +88,7 @@ impl Agent {
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
         let keys = Keys::new_key_pair();
-        let is_ready = false;
+        let status = AgentStatus::Uninitialized;
         let is_liar = true;
         Agent {
             agent_id,
@@ -90,14 +97,14 @@ impl Agent {
             port,
             keys,
             game_client_pubkey,
-            is_ready,
+            status,
             is_liar,
         }
     }
 
     /// Gets an agent's status. Returns `true` the agent has been spawned and `false` otherwise.
-    pub fn is_ready(&self) -> bool {
-        self.is_ready
+    pub fn get_status(&self) -> AgentStatus {
+        self.status
     }
 
     /// Returns an agent's unique ID.
@@ -115,10 +122,15 @@ impl Agent {
         self.port
     }
 
-    /// Sets an agent's status to ready. Used to indicate the agent has been spawned as a node.
+    /// Sets an agent's status ready. Used to indicate whether or not the agent has been spawned.
     pub fn set_ready(&mut self) {
-        self.is_ready = true
+        self.status = AgentStatus::Ready
     }
+
+    pub fn set_killed(&mut self) {
+        self.status = AgentStatus::Killed
+    }
+
     /// Receives an instance of `Agent` to generate a new instance of `AgentConfig`,
     /// which contains only the fields of `Agent` that can be shared with other
     /// participants of the game.

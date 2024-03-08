@@ -3,7 +3,7 @@ use text_colorizer::Colorize;
 use tokio::spawn;
 use tokio::sync::oneshot;
 
-use crate::agent::Agent;
+use crate::agent::{Agent, AgentStatus};
 use crate::client::Client;
 
 /// Represents the configuration for a game of Liars Lie.
@@ -34,8 +34,8 @@ impl Game {
             is_ready: false,
             value: None,
             max_value: None,
-            game_client: Client::new(),
             active_agents: Vec::new(),
+            game_client: Client::new(),
         }
     }
 
@@ -163,7 +163,7 @@ impl Game {
         let mut ready_signals = Vec::new();
         let mut spawned_count = 0;
         for agent in &self.active_agents {
-            if !agent.is_ready() {
+            if agent.get_status() == AgentStatus::Uninitialized {
                 // Use a oneshot channel to wait for agents to be spawned
                 let (signal_transmitter, signal_receiver) = oneshot::channel();
                 let agent = agent.clone();
@@ -190,6 +190,11 @@ impl Game {
                 Err(e) => println!("{}", e),
             }
         }
+
+        // If any of the new (uninitialized) agents failed to be spawned, remove them from the
+        // active_agents Vec.
+        self.active_agents
+            .retain(|agent| agent.get_status() != AgentStatus::Uninitialized);
 
         println!(
             "{}{}{}\n",
@@ -221,22 +226,29 @@ impl Game {
         self.add_honest_agents(value, num_honest);
         self.add_liar_agents(value, max_value, num_liars);
 
+        self.start_game_agents().await;
+
         let agent_config = match self.gen_agent_config() {
             Ok(agent_config) => agent_config,
             Err(e) => {
-                self.reset_game();
-                println!("[!] error: failed to generate agent configuration - {}", e);
-                return;
+                // Should not happen unless there is an issue in the code of the application itself
+                panic!("[!] error: failed to generate agent configuration - {}", e);
             }
         };
 
         if let Err(e) = Self::write_agent_config(&agent_config) {
+            // Could not write config to a file, kill spawned agents as they will be unreachable
+            for agent in &self.active_agents {
+                let _ = self
+                    .game_client
+                    .kill_agent(agent.get_id(), agent.get_address(), agent.get_port())
+                    .await;
+            }
             self.reset_game();
             println!("[!] error: failed to write agents.config file - {}", e);
             return;
         }
 
-        self.start_game_agents().await;
         self.init_game(value, max_value);
         self.print_ready();
     }
@@ -323,15 +335,19 @@ impl Game {
             return;
         }
 
-        // Check if the provided `target_id` corresponds to the ID of an an active agent
-        if let Some((address, port)) = self
+        if let Some(index) = self
             .active_agents
             .iter()
-            .find(|agent| agent.get_id() == target_id)
-            .map(|agent| (agent.get_address(), agent.get_port()))
+            .position(|agent| agent.get_id() == target_id)
         {
+            let address = self.active_agents[index].get_address();
+            let port = self.active_agents[index].get_port();
+
             match self.game_client.kill_agent(target_id, address, port).await {
-                Ok(success_msg) => println!("{}", success_msg),
+                Ok(success_msg) => {
+                    println!("{}", success_msg);
+                    self.active_agents[index].set_killed();
+                }
                 Err(e) => println!("{}", e),
             }
         } else {
@@ -339,6 +355,7 @@ impl Game {
                 "[!] error: the ID '{}' does not correspond to any active agent\n",
                 target_id
             );
+            return;
         }
     }
     /// Executes the `extend` command. The `extend` command checks for the existence of
@@ -351,44 +368,55 @@ impl Game {
 
         let (num_honest, num_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
 
-        // Backup and revert to current agents if something goes wrong after agents are added
-        // but have not yet been spawned.
+        // Backup and revert to current agents if something goes wrong after new agents are added
         let agents_backup = self.active_agents.clone();
 
         // self.value and self.max_value should not be None since self.is_ready() == true,
-        // however, test anyway to print the error instead of panicking with expect()
         if let (Some(value), Some(max_value)) = (self.value, self.max_value) {
             self.add_honest_agents(value, num_honest);
             self.add_liar_agents(value, max_value, num_liars);
         } else {
-            println!("[!] Unable to extend game; missing game settings.");
-            return;
+            panic!("[!] Unable to extend game; missing game settings.");
         }
+
+        self.start_game_agents().await;
 
         let agent_config = match self.gen_agent_config() {
             Ok(agent_config) => agent_config,
             Err(e) => {
-                // If new agents were added, but could not be added to the config, revert
-                // `Game.active_agents` to a previous state, before their addition.
-                self.active_agents = agents_backup;
-                println!(
+                // Should not happen unless there is an issue in the code of the application itself
+                panic!(
                     "[!] error: unable to extend game; failed to generate agent configuration - {}\n",
                     e
                 );
-                return;
             }
         };
 
         if let Err(e) = Self::write_agent_config(&agent_config) {
-            self.active_agents = agents_backup;
             println!(
                 "[!] error: unable to extend game; failed to write agents.config file - {}\n",
                 e
             );
+            // If unable to write new agent configuration to the agents.config file, new agents
+            // will be unreachable. Kill the newly spawned agents.
+            for agent in self.active_agents.iter() {
+                // Kill any agents that were not present in `Game.active_agents` before the execution
+                // of the extend command
+                if !agents_backup
+                    .iter()
+                    .any(|old_agent| old_agent.get_id() == agent.get_id())
+                {
+                    let _ = self
+                        .game_client
+                        .kill_agent(agent.get_id(), agent.get_address(), agent.get_port())
+                        .await;
+                }
+            }
+            // Reset `active_agents` to its previous state, before extension
+            self.active_agents = agents_backup;
+
             return;
         }
-
-        self.start_game_agents().await;
     }
 
     /// Executes the `playexpert` command. The `playexpert` command plays a round of the

@@ -73,7 +73,6 @@ impl Client {
         signature: &Option<Vec<u8>>,
         public_key: &str,
         agent_value: u64,
-        agent_id: usize,
     ) -> anyhow::Result<u64> {
         // `MsgSendValue` must be signed by the sender. Check if the message is accompanied by
         // a signature and verify it if so.
@@ -182,12 +181,11 @@ impl Client {
         let reply_packet = Packet::unpack(&reply)?;
 
         match Message::deserialize_message(&reply_packet.message) {
-            Ok(Message::MsgSendValue { value, agent_id }) => Self::handle_msg_send_value(
+            Ok(Message::MsgSendValue { value, .. }) => Self::handle_msg_send_value(
                 &reply_packet.message,
                 &reply_packet.msg_sig,
                 agent_pubkey,
                 value,
-                agent_id,
             ),
             Ok(other) => bail!("[!] error: expected MsgSendValue, received {:?}\n", other),
             Err(e) => bail!("[!] error: unable to decode message - {}\n", e),

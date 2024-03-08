@@ -45,6 +45,8 @@ pub struct Agent {
     game_client_pubkey: String,
     /// A flag to indicate whether this agent has been deployed or not.
     is_ready: bool,
+    /// A flag to indicate whether this agent is a liar or not.
+    is_liar: bool,
 }
 
 impl Agent {
@@ -56,6 +58,8 @@ impl Agent {
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
         let keys = Keys::new_key_pair();
+        let is_ready = false;
+        let is_liar = false;
         Agent {
             agent_id,
             value,
@@ -63,7 +67,8 @@ impl Agent {
             port,
             keys,
             game_client_pubkey,
-            is_ready: false,
+            is_ready,
+            is_liar,
         }
     }
 
@@ -76,6 +81,8 @@ impl Agent {
         let address = AGENT_ADDR.to_owned();
         let port = Self::get_new_port();
         let keys = Keys::new_key_pair();
+        let is_ready = false;
+        let is_liar = true;
         Agent {
             agent_id,
             value,
@@ -83,7 +90,8 @@ impl Agent {
             port,
             keys,
             game_client_pubkey,
-            is_ready: false,
+            is_ready,
+            is_liar,
         }
     }
 

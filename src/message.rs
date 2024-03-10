@@ -5,7 +5,7 @@ use crate::agent_config::AgentConfig;
 use crate::packet::Packet;
 
 /// Represents actions used by the game client and agents to communicate among themselves.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum Message {
     /// Used to request the receiving agent's value. Should expect a `MsgSendValue` as a reply.
     MsgQueryValue,
@@ -87,5 +87,117 @@ impl Message {
     /// `bincode::Error` if the format of `message_bytes` is invalid.
     pub fn deserialize_message(message_bytes: &[u8]) -> Result<Message, bincode::Error> {
         deserialize(message_bytes)
+    }
+}
+
+// ******************************************************************************************
+// ************************************* UNIT TESTS *****************************************
+// ******************************************************************************************
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_msg_query_value_ok() {
+        let message = Message::build_msg_query_value();
+        assert!(message.is_ok());
+        assert!(!message.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_build_msg_fetch_values_ok() {
+        let agent_id = 1;
+        let peers = vec![
+            AgentConfig::new(
+                1,
+                "127.0.0.1",
+                9001,
+                "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY=",
+            ),
+            AgentConfig::new(
+                2,
+                "127.0.0.1",
+                9002,
+                "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY=",
+            ),
+        ];
+
+        let message = Message::build_msg_fetch_values(agent_id, &peers);
+        assert!(message.is_ok());
+
+        assert_eq!(
+            Message::deserialize_message(&message.unwrap()).unwrap(),
+            Message::MsgFetchValues {
+                agent_id: 1,
+                peer_addresses: vec![
+                    AgentConfig::new(
+                        1,
+                        "127.0.0.1",
+                        9001,
+                        "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY=",
+                    ),
+                    AgentConfig::new(
+                        2,
+                        "127.0.0.1",
+                        9002,
+                        "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY=",
+                    ),
+                ]
+            }
+        );
+    }
+
+    #[test]
+    fn build_msg_send_value_ok() {
+        let message = Message::build_msg_send_value(10, 1);
+        assert!(message.is_ok());
+
+        assert_eq!(
+            Message::deserialize_message(&message.unwrap()).unwrap(),
+            Message::MsgSendValue {
+                agent_id: 1,
+                value: 10,
+            }
+        );
+    }
+
+    #[test]
+    fn build_msg_kill_agent_ok() {
+        let message = Message::build_msg_kill_agent(7);
+        assert!(message.is_ok());
+
+        assert_eq!(
+            Message::deserialize_message(&message.unwrap()).unwrap(),
+            Message::MsgKillAgent { agent_id: 7 }
+        );
+    }
+
+    #[test]
+    fn build_msg_fwd_values_ok() {
+        let message1 = Message::build_msg_send_value(10, 1).unwrap();
+        let message2 = Message::build_msg_send_value(15, 2).unwrap();
+
+        let packet1 = Packet::new(message1.clone(), None);
+        let packet2 = Packet::new(message2.clone(), None);
+
+        let msg_fwd_values = Message::build_msg_fwd_values(50, &vec![packet1, packet2]);
+
+        assert_eq!(
+            Message::deserialize_message(&msg_fwd_values.unwrap()).unwrap(),
+            Message::MsgFwdValues {
+                agent_id: 50,
+                peer_values: vec![
+                    Packet {
+                        message: message1,
+                        msg_sig: None
+                    },
+                    Packet {
+                        message: message2,
+                        msg_sig: None
+                    }
+                ]
+            }
+        )
     }
 }

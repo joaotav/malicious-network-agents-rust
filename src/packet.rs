@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// A `Packet` contains a field `message`, which specifies a request or a response, and
 /// an optional field `msg_sig` which contains a signature of `message` by the sender.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Packet {
     /// A message containing the data to be sent.
     pub message: Vec<u8>,

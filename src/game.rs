@@ -1,9 +1,12 @@
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use std::io::{self, Write};
 use text_colorizer::Colorize;
 use tokio::spawn;
 use tokio::sync::oneshot;
 
 use crate::agent::{Agent, AgentStatus};
+use crate::agent_config::AgentConfig;
 use crate::client::Client;
 
 /// Represents the configuration for a game of Liars Lie.
@@ -57,6 +60,19 @@ impl Game {
             panic!("Game cannot be started! Missing game values or active agents.\n");
         }
         println!("{}\n", "[+] Game is ready!".bold());
+    }
+
+    /// Prints the ID's of the agents that compose `expert_subset`.
+    fn print_expert_subset(expert_subset: &Vec<AgentConfig>) {
+        let subset_ids: Vec<String> = expert_subset
+            .iter()
+            .map(|agent| agent.get_id().to_string())
+            .collect();
+        println!(
+            "{}{}\n",
+            "[+] The following agents compose this round's expert subset: ".bold(),
+            subset_ids.join(", ")
+        )
     }
 
     /// Resets all the fields of `Game` to their default values as specified by `Game::new()`.
@@ -152,7 +168,7 @@ impl Game {
         self.is_ready = true;
     }
 
-    /// Returns the game's list of active agents.
+    /// Returns all the agents in the game's list of active agents, regardless of their status.
     fn get_active_agents(&self) -> &Vec<Agent> {
         &self.active_agents
     }
@@ -282,7 +298,7 @@ impl Game {
             " agents for their values...".bold()
         );
 
-        match self.game_client.play_standard().await {
+        match self.game_client.play_standard_round().await {
             Ok(agent_values) => {
                 Client::print_network_value(&Client::infer_network_value(&agent_values))
             }
@@ -358,6 +374,7 @@ impl Game {
             return;
         }
     }
+
     /// Executes the `extend` command. The `extend` command checks for the existence of
     /// the `agents.config` file, and if present, extends it by launching new agents.
     pub async fn extend(&mut self, num_agents: u16, liar_ratio: f32) {
@@ -424,12 +441,105 @@ impl Game {
     /// the `play` command, however unlike in standard mode, the client can only directly
     /// query a subset of the currently deployed agents, the size of which is taken as
     /// an argument by `fn play_expert()`.
-    pub fn play_expert(&self, num_agents: u16, liar_ratio: f32) {
+    pub async fn play_expert(&mut self, num_agents: u16, liar_ratio: f32) {
         if !self.is_ready() {
             Game::print_not_started();
             return;
         }
-        todo!()
+
+        if let Err(e) = self.game_client.load_agent_config() {
+            println!(
+                "[!] error: failed to load data from agents.config - {}\n",
+                e
+            );
+            return;
+        }
+        // Calculate the user's requested number of honest agents and liars for the subset
+        let (req_honest, req_liars) = Self::get_agent_distribution(num_agents, liar_ratio);
+        let (game_honest, game_liars) = self.get_num_spawned();
+
+        if req_honest > game_honest {
+            println!(
+                "{} {}\n",
+                "[!] error: not enough honest agents to form the requested subset.",
+                "Choose a smaller number or extend the game."
+            );
+            return;
+        }
+
+        if req_liars > game_liars {
+            println!(
+                "{} {}\n",
+                "[!] error: not enough liars to form the requested subset.",
+                "Choose a smaller number or extend the game."
+            );
+            return;
+        }
+
+        let expert_subset: Vec<AgentConfig> = self.get_expert_subset(req_honest, req_liars);
+        Self::print_expert_subset(&expert_subset);
+
+        match self.game_client.play_expert_round(&expert_subset).await {
+            Ok(agent_values) => {
+                println!(
+                    "{} {} {}\n",
+                    "[+] Received valid, signed replies from".bold(),
+                    agent_values.len(),
+                    "agents!".bold(),
+                );
+                Client::print_network_value(&Client::infer_network_value(&agent_values));
+            }
+            Err(e) => println!("{}", e),
+        }
+    }
+
+    /// This method selects a random set of agents containing the requested number of honest agents
+    /// `num_honest` and number of liars `num_liars`. It ensures the set is composed only of agents
+    /// that are currently spawned and reachable. The method returns a `Vec<AgentConfig>` containing
+    /// information about the agents included in the set.
+    fn get_expert_subset(&self, num_honest: u16, num_liars: u16) -> Vec<AgentConfig> {
+        // Create a shuffled clone of the active_agents vector and use it for agent selection.
+        // This prevents the same subset of agents from being chosen every time when the same
+        // parameters are used to play multiple consecutive rounds.
+        let mut shuffled_agents = self.active_agents.clone();
+        let mut rng = thread_rng();
+        shuffled_agents.shuffle(&mut rng);
+
+        // Get `num_honest` honest agents
+        let mut honest_agents: Vec<AgentConfig> = shuffled_agents
+            .iter()
+            .filter(|agent| !agent.is_liar())
+            .take(num_honest.into())
+            .map(|agent| agent.to_config())
+            .collect();
+
+        // Get `num_liars` liars
+        let mut liars: Vec<AgentConfig> = shuffled_agents
+            .iter()
+            .filter(|agent| agent.is_liar())
+            .take(num_liars.into())
+            .map(|agent| agent.to_config())
+            .collect();
+
+        honest_agents.append(&mut liars.clone());
+        let expert_subset = honest_agents;
+
+        expert_subset
+    }
+
+    /// Returns a tuple containing the number of honest agents and liars that are currently spawned.
+    fn get_num_spawned(&self) -> (u16, u16) {
+        let mut honest = 0;
+        let mut liars = 0;
+
+        for agent in &self.active_agents {
+            if agent.is_liar() && agent.get_status() == AgentStatus::Ready {
+                liars += 1;
+            } else if !agent.is_liar() && agent.get_status() == AgentStatus::Ready {
+                honest += 1;
+            }
+        }
+        (honest, liars)
     }
 
     /// Attempts to read user input from stdin, trim it, and return it.

@@ -1,7 +1,7 @@
 use anyhow::{bail, Context};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
-use std::ops::Deref;
 use std::sync::Arc;
 use text_colorizer::Colorize;
 use tokio::io;
@@ -13,11 +13,12 @@ use crate::keys::Keys;
 use crate::message::Message;
 use crate::network_utils::*;
 use crate::packet::Packet;
+
 /// Represents a game client.
 ///
-/// `Client`s are responsible for communicating with deployed agents
+/// Clients are responsible for communicating with deployed agents
 /// and querying for their individual values to determine the network value.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Client {
     /// The client's Ed25519 key pair. Used for message authentication.
     keys: Keys,
@@ -72,10 +73,7 @@ impl Client {
         message_bytes: &[u8],
         signature: &Option<Vec<u8>>,
         public_key: &str,
-        agent_value: u64,
-    ) -> anyhow::Result<u64> {
-        // `MsgSendValue` must be signed by the sender. Check if the message is accompanied by
-        // a signature and verify it if so.
+    ) -> anyhow::Result<()> {
         if let Some(signature) = signature {
             Keys::verify(message_bytes, signature, public_key)?;
         } else {
@@ -83,11 +81,26 @@ impl Client {
                 "[!] error: MsgSendValue requires a signature, but the received packet contains None\n"
             );
         }
+        Ok(())
+    }
 
-        Ok(agent_value)
+    /// Receives `agent_id` and searches `Client.peers` for an agent with ID equal to `agent_id`.
+    /// If found, returns the agent's base64-encoded public key, otherwise returns None.
+    fn get_agent_pubkey(&self, agent_id: usize) -> Option<String> {
+        self.peers
+            .iter()
+            .find(|agent| agent.get_id() == agent_id)
+            .map(|agent| agent.get_public_key().to_string())
     }
 
     /// Receives the values reported by the game's agents and infers the network value from them.
+    /// If multiple values are tied with the most occurrences, return all of them.
+    ///
+    /// For example, given the values below, both 2 and 8 will be returned as the network value.
+    ///     Number 2: 4 votes
+    ///     Number 5: 1 vote  
+    ///     Number 8: 4 votes
+    ///     
     pub fn infer_network_value(agent_values: &Vec<u64>) -> Option<Vec<u64>> {
         let mut values_count = HashMap::new();
 
@@ -114,9 +127,8 @@ impl Client {
         Some(network_value)
     }
 
-    /// Prints the network value inferred after playing a round of the game.
-    /// Will print multiple values if there was no majority consensus on a single
-    /// network value.
+    /// Prints the network value inferred after playing a round of the game. Will print
+    /// multiple values if there was no majority consensus on a single network value.
     pub fn print_network_value(network_value: &Option<Vec<u64>>) {
         match network_value {
             Some(network_value) => match network_value.len() {
@@ -148,16 +160,19 @@ impl Client {
 
             // If no valid votes were received from the agents
             None => {
-                println!("{}",
-                    "[+] Unable to determine the network value because no valid replies were received.\n".bold()
+                println!(
+                    "{}",
+                    "[+] Unable to determine the network value; no valid replies were received.\n"
+                        .bold()
                 );
             }
         }
     }
 
-    /// Queries an individual agent for its value by sending a `MsgQueryValue`.
+    /// Queries an individual agent for its value by sending a `MsgQueryValue`. Returns the agent's
+    /// value as u64 if successful and `anyhow::Error` otherwise.
     async fn send_msg_query_value(
-        client_keys: &Keys,
+        client: Arc<Self>,
         socket: &mut TcpStream,
         agent_pubkey: &str,
     ) -> anyhow::Result<u64> {
@@ -168,25 +183,29 @@ impl Client {
         // NOTE: For messages composed by large amounts of data, signing the whole message incurs
         // a significant overhead. Ideally, the hash of  the message should be signed instead.
         // Here, given the small sizes of messages, we sign the whole message for simplicity's sake.
-        let message_signature = client_keys.sign(&message)?;
+        let message_signature = client.keys.sign(&message)?;
 
         // Build a packet with the message and message signature
         let packet = Packet::build_packet(message, Some(message_signature))
             .context("[!] error: failed to build packet\n")?;
 
-        send_packet(&packet, socket).await?;
+        match send_packet(&packet, socket).await {
+            Ok(()) => (),
+            Err(e) => bail!("[!] error: unable to reach agent - {}", e),
+        }
 
         let reply = recv_packet(socket).await?;
-
         let reply_packet = Packet::unpack(&reply)?;
 
         match Message::deserialize_message(&reply_packet.message) {
-            Ok(Message::MsgSendValue { value, .. }) => Self::handle_msg_send_value(
-                &reply_packet.message,
-                &reply_packet.msg_sig,
-                agent_pubkey,
-                value,
-            ),
+            Ok(Message::MsgSendValue { value, .. }) => {
+                Self::handle_msg_send_value(
+                    &reply_packet.message,
+                    &reply_packet.msg_sig,
+                    agent_pubkey,
+                );
+                Ok(value)
+            }
             Ok(other) => bail!("[!] error: expected MsgSendValue, received {:?}\n", other),
             Err(e) => bail!("[!] error: unable to decode message - {}\n", e),
         }
@@ -194,14 +213,14 @@ impl Client {
 
     /// Builds and sends a MsgKillAgent to an active agent. This message does not expect a reply.
     async fn send_msg_kill_agent(
+        client: &Self,
         agent_id: usize,
-        client_keys: &Keys,
         socket: &mut TcpStream,
     ) -> anyhow::Result<()> {
         let message = Message::build_msg_kill_agent(agent_id)
             .context("[!] error: failed to build MsgKillAgent\n")?;
 
-        let message_signature = client_keys.sign(&message)?;
+        let message_signature = client.keys.sign(&message)?;
 
         let packet = Packet::build_packet(message, Some(message_signature))
             .context("[!] error: failed to build packet\n")?;
@@ -212,15 +231,104 @@ impl Client {
         }
     }
 
-    /// Plays a standard round of the game. The game client connects to the agents loaded
+    /// Receives and processes the contents of `Message::MsgFwdValues`. Returns a `Vec<Message>`
+    /// containing all the valid/authenticated messages extracted from `MsgFwdValues` and
+    /// `anyhow::Error` otherwise.
+    fn handle_msg_fwd_values(
+        &self,
+        message_bytes: &[u8],
+        signature: &Option<Vec<u8>>,
+        forwarded_replies: &Vec<Packet>,
+        agent_pubkey: &str,
+    ) -> anyhow::Result<Vec<Message>> {
+        if let Some(signature) = signature {
+            Keys::verify(message_bytes, signature, agent_pubkey)?;
+        } else {
+            bail!(
+                "[!] error: MsgFwdValues requires a signature, but the received packet contains None\n"
+            );
+        }
+
+        let mut received_messages: Vec<Message> = Vec::new();
+
+        for packet in forwarded_replies {
+            match Message::deserialize_message(&packet.message) {
+                Ok(Message::MsgSendValue { agent_id, value }) => {
+                    // Retrieve the public key of the agent who sent this `MsgSendValue`
+                    if let Some(agent_pubkey) = self.get_agent_pubkey(agent_id) {
+                        match Self::handle_msg_send_value(
+                            &packet.message,
+                            &packet.msg_sig,
+                            &agent_pubkey,
+                        ) {
+                            // The received MsgSendValue was authenticated sucessfully
+                            Ok(()) => {
+                                received_messages.push(Message::MsgSendValue { agent_id, value })
+                            }
+                            // If the signature of the MsgSendValue is invalid, ignore the value
+                            Err(_) => (),
+                        }
+                    }
+                }
+                // If the forwarded message is not a MsgSendValue, ignore it
+                Ok(_) => (),
+                // The message could not be deserialized
+                // NOTE: It would be an improvement to log this and other similar types of errors
+                Err(_) => (),
+            }
+        }
+        Ok(received_messages)
+    }
+
+    /// Builds a `MsgFetchValues`, sends it to the agent at the other end of the `socket`
+    /// TcpStream and expects a `MsgFwdValues` as a reply. Returns a `Vec<Message>` containing the
+    /// messages forwarded by the agent if successful and `anyhow::Error` otherwise.
+    async fn send_msg_fetch_values(
+        client: Arc<Self>,
+        socket: &mut TcpStream,
+        agent_id: usize,
+        agent_pubkey: &str,
+    ) -> anyhow::Result<Vec<Message>> {
+        let message = Message::build_msg_fetch_values(agent_id, &client.peers)
+            .context("[!] error: failed to build MsgFetchValues\n")?;
+
+        let message_signature = client.keys.sign(&message)?;
+
+        let packet = Packet::build_packet(message, Some(message_signature))
+            .context("[!] error: failed to build packet\n")?;
+
+        match send_packet(&packet, socket).await {
+            Ok(()) => (),
+            Err(e) => bail!("[!] error: unable to reach agent {} - {}", agent_id, e),
+        }
+
+        let reply = recv_packet(socket).await?;
+        let reply_packet = Packet::unpack(&reply)?;
+
+        match Message::deserialize_message(&reply_packet.message) {
+            Ok(Message::MsgFwdValues {
+                agent_id,
+                peer_values,
+            }) => client.handle_msg_fwd_values(
+                &reply_packet.message,
+                &reply_packet.msg_sig,
+                &peer_values,
+                agent_pubkey,
+            ),
+            Ok(other) => bail!("[!] error: expected MsgFwdValues, received {:?}\n", other),
+            Err(e) => bail!("[!] error: unable to decode message - {}\n", e),
+        }
+    }
+
+    /// Plays a standard round of the game. The game's client connects to the agents loaded
     /// from the `agents.config` file, queries them individually for their values and
     /// returns a Vec<u64> containing all valid agent replies. A reply is valid iff
     /// the received message is not corrupted and it has been signed by the agent to which
     /// the query was sent.
-    pub async fn play_standard(&self) -> anyhow::Result<Vec<u64>> {
+    pub async fn play_standard_round(&self) -> anyhow::Result<Vec<u64>> {
         let mut agent_conn_handles = Vec::new();
         let mut agent_values = Vec::new();
-        let keys = Arc::new(self.keys.clone());
+        let client_arc = Arc::new(self.clone());
 
         for peer in &self.peers {
             let address = peer.get_address();
@@ -240,9 +348,9 @@ impl Client {
             };
 
             let agent_pubkey = peer.get_public_key().to_owned();
-            let client_keys = keys.clone();
+            let client = client_arc.clone();
             let handle = spawn(async move {
-                Self::send_msg_query_value(&client_keys, &mut socket, &agent_pubkey).await
+                Self::send_msg_query_value(client, &mut socket, &agent_pubkey).await
             });
             agent_conn_handles.push(handle);
         }
@@ -260,7 +368,76 @@ impl Client {
         Ok(agent_values)
     }
 
-    /// Connects to `address`:`port` and sends a MsgKillAgent addressed to `agent_id`.
+    /// Plays an expert round of the game. The game's client connects to a subset of the agents
+    /// loaded from the `agents.config` file and queries them for both their values and the values of
+    /// other agents that are not in the subset and cannot be reached directly. This function returns
+    /// a `Vec<u64>` containing all the valid unique values received from agents. A message containing
+    /// a value is only valid if the client can verify that it was signed by the sending agent.
+    pub async fn play_expert_round(
+        &self,
+        expert_subset: &Vec<AgentConfig>,
+    ) -> anyhow::Result<Vec<u64>> {
+        let mut agent_conn_handles = Vec::new();
+        let client_arc = Arc::new(self.clone());
+
+        let mut agent_values: HashSet<(usize, u64)> = HashSet::new();
+
+        for peer in expert_subset {
+            let address = peer.get_address();
+            let port = peer.get_port();
+            let mut socket = match connect(address, port).await {
+                Ok(socket) => socket,
+                Err(e) => {
+                    println!(
+                        "[!] error: failed to connect to (Agent ID: {} - {}:{}) - {}\n",
+                        peer.get_id(),
+                        address,
+                        port,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let client = client_arc.clone();
+            let agent_pubkey = peer.get_public_key().to_owned();
+            let agent_id = peer.get_id();
+            let handle = spawn(async move {
+                Self::send_msg_fetch_values(client, &mut socket, agent_id, &agent_pubkey).await
+            });
+            agent_conn_handles.push(handle);
+        }
+
+        for handle in agent_conn_handles {
+            match handle.await {
+                Ok(Ok(fetched_messages)) => {
+                    // Keep only the previously unknown values contained in the `MsgFwdValues`
+                    Self::filter_unique_values(&mut agent_values, &fetched_messages)
+                }
+                Ok(Err(e)) => println!("{}", e),
+                Err(e) => println!("[!] error: task panicked - {}\n", e),
+            }
+        }
+
+        let agent_values: Vec<u64> = agent_values.iter().map(|&(_, value)| value).collect();
+
+        Ok(agent_values)
+    }
+
+    /// Receives a vector of messages `&Vec<Message>`, extracts all `MsgSendValue` it contains and
+    /// uses a HashSet to store only the tuples (agent_id, value) which were not yet known.
+    fn filter_unique_values(received_values: &mut HashSet<(usize, u64)>, messages: &Vec<Message>) {
+        for message in messages {
+            match message {
+                Message::MsgSendValue { agent_id, value } => {
+                    let _ = received_values.insert((*agent_id, *value));
+                }
+                _ => (),
+            }
+        }
+    }
+
+    /// Connects to `address`:`port` and sends a `MsgKillAgent` addressed to `agent_id`.
     pub async fn kill_agent(
         &self,
         agent_id: usize,
@@ -279,12 +456,9 @@ impl Client {
             }
         };
 
-        let client_keys = self.keys.clone();
-
+        let client = self.clone();
         let handle =
-            spawn(
-                async move { Self::send_msg_kill_agent(agent_id, &client_keys, &mut socket).await },
-            );
+            spawn(async move { Self::send_msg_kill_agent(&client, agent_id, &mut socket).await });
 
         match handle.await {
             Ok(Ok(())) => Ok(format!(

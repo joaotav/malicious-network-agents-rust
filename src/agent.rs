@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use text_colorizer::Colorize;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
@@ -127,8 +128,14 @@ impl Agent {
         self.status = AgentStatus::Ready
     }
 
+    /// Sets an agent's status to `Killed` to indicate that it is inactive but should not be spawned.
     pub fn set_killed(&mut self) {
         self.status = AgentStatus::Killed
+    }
+
+    /// Returns a bool indicating whether the agent is a liar or not.
+    pub fn is_liar(&self) -> bool {
+        self.is_liar
     }
 
     /// Receives an instance of `Agent` to generate a new instance of `AgentConfig`,
@@ -159,11 +166,6 @@ impl Agent {
         Ok(())
     }
 
-    /// TODO!
-    fn handle_msg_send_value(&self) {
-        todo!();
-    }
-
     /// Receives a MsgKillAgent, verifies the intendend recipient against self and verifies the
     /// message signature. Returns Ok(()) if the agent should be killed.
     fn handle_msg_kill_agent(
@@ -188,7 +190,119 @@ impl Agent {
         Ok(())
     }
 
-    /// Receives a packet and executes the logic required by the message contained within.
+    /// Builds a `MsgFwdValues` containing the values fetched from other agents and sends it to
+    /// the game's client.
+    async fn send_msg_fwd_values(
+        &self,
+        peer_values: &Vec<Packet>,
+        client_socket: &mut TcpStream,
+    ) -> anyhow::Result<()> {
+        let message = Message::build_msg_fwd_values(self.agent_id, peer_values)?;
+        let message_signature = self.keys.sign(&message)?;
+
+        let packet = Packet::build_packet(message, Some(message_signature))
+            .context("[!] error: failed to build packet\n")?;
+
+        match send_packet(&packet, client_socket).await {
+            Ok(()) => Ok(()),
+            Err(e) => bail!("[!] error: unable to forward values back to client - {}", e),
+        }
+    }
+
+    /// Processes a `MsgFetchValues` received from the game's client. This method receives the
+    /// addresses of peers as a Vec of `AgentConfig` instances and attempts to query each peer for
+    /// its individual value with a `MsgQueryValue`. The received replies are then used to construct
+    /// a `MsgFwdValues`. This method does not verify the signature of received replies, the task of
+    /// performing authentication is delegated to the game's client upon receiving the `MsgFwdValues`.
+    async fn handle_msg_fetch_values(
+        &self,
+        client_socket: &mut TcpStream,
+        agent_id: usize,
+        peer_addresses: &Vec<AgentConfig>,
+    ) -> anyhow::Result<()> {
+        if agent_id != self.agent_id {
+            bail!("[!] error: Agent {} received MsgFetchValues, but message is addressed to Agent {}\n", 
+            self.agent_id, agent_id);
+        }
+
+        let mut agent_conn_handles = Vec::new();
+        let mut peer_values = Vec::new();
+        let agent_arc = Arc::new(self.clone());
+
+        for peer in peer_addresses {
+            let address = peer.get_address();
+            let port = peer.get_port();
+            let mut socket = match connect(address, port).await {
+                Ok(socket) => socket,
+                Err(e) => {
+                    println!(
+                        "[!] error: Agent {} failed to connect to (Agent ID: {} - {}:{}) - {}\n",
+                        self.agent_id,
+                        peer.get_id(),
+                        address,
+                        port,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let queried_agent_pubkey = peer.get_public_key().to_owned();
+            let querying_agent = agent_arc.clone();
+            let handle = spawn(async move {
+                Self::send_msg_query_value(querying_agent, &mut socket, &queried_agent_pubkey).await
+            });
+            agent_conn_handles.push(handle);
+        }
+
+        for handle in agent_conn_handles {
+            match handle.await {
+                Ok(Ok(peer_value)) => {
+                    peer_values.push(peer_value);
+                }
+                Ok(Err(e)) => println!("{}", e),
+                Err(e) => println!("[!] error: task panicked - {}\n", e),
+            }
+        }
+
+        self.send_msg_fwd_values(&peer_values, client_socket)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Queries an individual agent peer for its value by sending a `MsgQueryValue`. This function
+    /// does not perform the authentication of received messages.
+    async fn send_msg_query_value(
+        querying_agent: Arc<Self>,
+        socket: &mut TcpStream,
+        queried_agent_pubkey: &str,
+    ) -> anyhow::Result<Packet> {
+        let message = Message::build_msg_query_value()
+            .context("[!] error: failed to build MsgQueryValue\n")?;
+
+        let message_signature = querying_agent.keys.sign(&message)?;
+
+        // Build a packet with the message and message signature
+        let packet = Packet::build_packet(message, Some(message_signature))
+            .context("[!] error: failed to build packet\n")?;
+
+        match send_packet(&packet, socket).await {
+            Ok(()) => (),
+            Err(e) => bail!("[!] error: unable to reach agent - {}", e),
+        }
+
+        let reply = recv_packet(socket).await?;
+        let reply_packet = Packet::unpack(&reply)?;
+
+        match Message::deserialize_message(&reply_packet.message) {
+            Ok(Message::MsgSendValue { agent_id, value }) => Ok(reply_packet),
+            Ok(other) => bail!("[!] error: expected MsgSendValue, received {:?}\n", other),
+            Err(e) => bail!("[!] error: unable to decode message - {}\n", e),
+        }
+    }
+
+    /// Receives a packet and executes the required logic according to the type of message it contains.
     async fn packet_handler(
         &self,
         packet_bytes: &[u8],
@@ -209,13 +323,24 @@ impl Agent {
                     shutdown_token.cancel();
                 }
             }
+            Ok(Message::MsgFetchValues {
+                agent_id,
+                peer_addresses,
+            }) => {
+                self.handle_msg_fetch_values(socket, agent_id, &peer_addresses)
+                    .await?
+            }
+            Ok(Message::MsgFwdValues {
+                agent_id,
+                peer_values,
+            }) => todo!(),
             Err(e) => println!("[!] error: unable to decode message - {}\n", e),
         }
 
         Ok(())
     }
 
-    /// Processes incoming packets from an active TCP connection. This function reads packets from
+    /// Processes incoming packets from an active TCP connection. This method reads packets from
     /// a `TcpStream` and handles them using internal packet handling logic.
     async fn connection_handler(
         &self,
@@ -252,7 +377,7 @@ impl Agent {
             self.port
         );
 
-        // Send a signal back to the calling function to inform that the agent has been spawned and
+        // Send a signal back to caller to inform that the agent has been spawned and
         // execution may continue
         ready_signal.send(self.agent_id);
 
@@ -269,7 +394,8 @@ impl Agent {
                         let shutdown_token = cancellation_token.clone();
 
                         spawn(async move {
-                            if let Err(e) = agent.connection_handler(&mut socket, shutdown_token).await {
+                            if let Err(e) = agent.connection_handler(&mut socket, shutdown_token)
+                            .await {
                                 println!("{}", e);
                             }
                         });

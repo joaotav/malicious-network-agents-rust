@@ -22,7 +22,7 @@ async fn main() {
         let user_input = match Game::get_user_input() {
             Ok(user_input) => user_input,
             Err(e) => {
-                println!("error: failed to read user input - {}.\n", e);
+                println!("error: failed to read user input - {}\n", e);
                 continue;
             }
         };
@@ -44,7 +44,7 @@ async fn main() {
                 Commands::PlayExpert {
                     num_agents,
                     liar_ratio,
-                } => game.play_expert(num_agents, liar_ratio),
+                } => game.play_expert(num_agents, liar_ratio).await,
                 Commands::Kill { agent_id } => game.kill(agent_id).await,
             },
 

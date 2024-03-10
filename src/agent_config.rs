@@ -50,3 +50,29 @@ impl AgentConfig {
         &self.public_key
     }
 }
+
+// ******************************************************************************************
+// ************************************* UNIT TESTS *****************************************
+// ******************************************************************************************
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_and_getters() {
+        let config = AgentConfig::new(
+            1,
+            "127.0.0.1",
+            8888,
+            "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY=",
+        );
+
+        assert_eq!(config.get_id(), 1);
+        assert_eq!(config.get_address(), "127.0.0.1");
+        assert_eq!(config.get_port(), 8888);
+        assert_eq!(
+            config.get_public_key(),
+            "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY="
+        );
+    }
+}

@@ -97,11 +97,6 @@ impl Commands {
         }
     }
 
-    fn has_agent_id(&self) -> Option<u16> {
-        // REVIEW: This function may be unecessary
-        todo!();
-    }
-
     /// Receives a variant of `Commands``, check for, and test all possible arguments to ensure
     /// that they satisfy the program's constraints.
     pub fn validate_args_values(&self) -> Result<(), String> {

@@ -513,7 +513,7 @@ impl Game {
             .collect();
 
         // Get `num_liars` liars
-        let mut liars: Vec<AgentConfig> = shuffled_agents
+        let liars: Vec<AgentConfig> = shuffled_agents
             .iter()
             .filter(|agent| agent.is_liar())
             .take(num_liars.into())

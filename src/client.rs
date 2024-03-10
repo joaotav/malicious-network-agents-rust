@@ -199,12 +199,14 @@ impl Client {
 
         match Message::deserialize_message(&reply_packet.message) {
             Ok(Message::MsgSendValue { value, .. }) => {
-                Self::handle_msg_send_value(
+                match Self::handle_msg_send_value(
                     &reply_packet.message,
                     &reply_packet.msg_sig,
                     agent_pubkey,
-                );
-                Ok(value)
+                ) {
+                    Ok(()) => Ok(value),
+                    Err(e) => Err(e),
+                }
             }
             Ok(other) => bail!("[!] error: expected MsgSendValue, received {:?}\n", other),
             Err(e) => bail!("[!] error: unable to decode message - {}\n", e),
@@ -306,10 +308,7 @@ impl Client {
         let reply_packet = Packet::unpack(&reply)?;
 
         match Message::deserialize_message(&reply_packet.message) {
-            Ok(Message::MsgFwdValues {
-                agent_id,
-                peer_values,
-            }) => client.handle_msg_fwd_values(
+            Ok(Message::MsgFwdValues { peer_values, .. }) => client.handle_msg_fwd_values(
                 &reply_packet.message,
                 &reply_packet.msg_sig,
                 &peer_values,

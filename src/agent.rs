@@ -247,11 +247,9 @@ impl Agent {
                 }
             };
 
-            let queried_agent_pubkey = peer.get_public_key().to_owned();
             let querying_agent = agent_arc.clone();
-            let handle = spawn(async move {
-                Self::send_msg_query_value(querying_agent, &mut socket, &queried_agent_pubkey).await
-            });
+            let handle =
+                spawn(async move { Self::send_msg_query_value(querying_agent, &mut socket).await });
             agent_conn_handles.push(handle);
         }
 
@@ -276,7 +274,6 @@ impl Agent {
     async fn send_msg_query_value(
         querying_agent: Arc<Self>,
         socket: &mut TcpStream,
-        queried_agent_pubkey: &str,
     ) -> anyhow::Result<Packet> {
         let message = Message::build_msg_query_value()
             .context("[!] error: failed to build MsgQueryValue\n")?;
@@ -296,7 +293,7 @@ impl Agent {
         let reply_packet = Packet::unpack(&reply)?;
 
         match Message::deserialize_message(&reply_packet.message) {
-            Ok(Message::MsgSendValue { agent_id, value }) => Ok(reply_packet),
+            Ok(Message::MsgSendValue { .. }) => Ok(reply_packet),
             Ok(other) => bail!("[!] error: expected MsgSendValue, received {:?}\n", other),
             Err(e) => bail!("[!] error: unable to decode message - {}\n", e),
         }
@@ -315,7 +312,12 @@ impl Agent {
 
         match message {
             Ok(Message::MsgQueryValue) => self.handle_msg_query_value(socket).await?,
-            Ok(Message::MsgSendValue { value, agent_id }) => todo!(),
+            Ok(Message::MsgSendValue { .. }) => {
+                bail!(
+                    "[!] warning: Agent {} received an unexpected MsgSendValue",
+                    self.agent_id
+                );
+            }
             Ok(Message::MsgKillAgent { agent_id }) => {
                 if let Ok(()) =
                     self.handle_msg_kill_agent(&packet.message, &packet.msg_sig, agent_id)
@@ -330,10 +332,12 @@ impl Agent {
                 self.handle_msg_fetch_values(socket, agent_id, &peer_addresses)
                     .await?
             }
-            Ok(Message::MsgFwdValues {
-                agent_id,
-                peer_values,
-            }) => todo!(),
+            Ok(Message::MsgFwdValues { .. }) => {
+                bail!(
+                    "[!] warning: Agent {} received an unexpected MsgSendValue",
+                    self.agent_id
+                );
+            }
             Err(e) => println!("[!] error: unable to decode message - {}\n", e),
         }
 
@@ -379,7 +383,7 @@ impl Agent {
 
         // Send a signal back to caller to inform that the agent has been spawned and
         // execution may continue
-        ready_signal.send(self.agent_id);
+        let _ = ready_signal.send(self.agent_id);
 
         let cancellation_token = CancellationToken::new();
 

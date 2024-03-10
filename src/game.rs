@@ -498,10 +498,15 @@ impl Game {
     /// that are currently spawned and reachable. The method returns a `Vec<AgentConfig>` containing
     /// information about the agents included in the set.
     fn get_expert_subset(&self, num_honest: u16, num_liars: u16) -> Vec<AgentConfig> {
-        // Create a shuffled clone of the active_agents vector and use it for agent selection.
-        // This prevents the same subset of agents from being chosen every time when the same
-        // parameters are used to play multiple consecutive rounds.
+        // Create a clone of the active_agents vector and remove all the agents whose status is
+        // not equal to `AgentStatus::Ready`. Shuffle the resulting vector and use it to select
+        // agents for the expert subset. This prevents the same subset of agents from being chosen
+        // every time when the same parameters are used to play multiple consecutive rounds.
         let mut shuffled_agents = self.active_agents.clone();
+
+        // Keep only agents whose status is `AgentStatus::Ready`
+        shuffled_agents.retain(|agent| agent.get_status() == AgentStatus::Ready);
+
         let mut rng = thread_rng();
         shuffled_agents.shuffle(&mut rng);
 

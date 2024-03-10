@@ -306,25 +306,19 @@ impl Game {
         };
     }
 
-    /// Executes the `stop` command. The `stop` command stops all agents listed
-    /// in the `agents.config`file, removes all agent information from the same file,
-    /// and exit from the program.
+    /// Executes the `stop` command. The `stop` command stops all agents listed in the
+    /// `agents.config` file, except those that have already been killed, removes all agent
+    /// information from the same file, and exit from the program.
     pub async fn stop(&mut self) {
         if self.is_ready() {
-            // Load agent information from agents.config, as the game may have been extended but not
-            // played, causing the client's information on agents to be outdated.
-            if let Err(e) = self.game_client.load_agent_config() {
-                println!(
-                    "[!] error: failed to load data from agents.config - {}\n",
-                    e
-                );
-                return;
-            }
-
             println!("{}", "[+] Stopping all agents...\n".bold());
 
-            // Send a MsgKillAgent to every agent in the game client's list of peers
-            for agent in self.game_client.get_peers() {
+            let mut agents_to_kill = self.get_active_agents().clone();
+
+            // Attempt to kill only those agents whose status is `Ready`, i.e, are currently running
+            agents_to_kill.retain(|agent| agent.get_status() == AgentStatus::Ready);
+
+            for agent in &agents_to_kill {
                 match self
                     .game_client
                     .kill_agent(agent.get_id(), agent.get_address(), agent.get_port())

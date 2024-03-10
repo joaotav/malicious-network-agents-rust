@@ -487,4 +487,23 @@ mod tests {
             assert_eq!(first_id + i, new_id);
         }
     }
+
+    #[test]
+    fn test_agent_to_config() {
+        let agent = Agent {
+            agent_id: 1,
+            value: 10,
+            address: "127.0.0.1".to_owned(),
+            port: 9001,
+            keys: Keys::new_key_pair(),
+            game_client_pubkey: "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY=".to_owned(),
+            status: AgentStatus::Uninitialized,
+            is_liar: false,
+        };
+
+        assert_eq!(
+            agent.to_config(),
+            AgentConfig::new(1, "127.0.0.1", 9001, agent.keys.get_public_key(),)
+        );
+    }
 }

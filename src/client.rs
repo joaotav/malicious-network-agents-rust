@@ -472,3 +472,81 @@ impl Client {
         }
     }
 }
+
+// ******************************************************************************************
+// ************************************* UNIT TESTS *****************************************
+// ******************************************************************************************
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_agent_config_ok() {
+        let mut client = Client::new();
+
+        let agent_config = r#"
+        [
+            {
+                "agent_id": 1,
+                "address": "127.0.0.1",
+                "port": 5000,
+                "public_key": "1gVlq8XFG6qQ+4qj5GvX2xQZVc2bTlMVslNV6z8fuBI="
+            },
+            {
+                "agent_id": 2,
+                "address": "127.0.0.1",
+                "port": 5001,
+                "public_key": "b8CZcEFBzcGqWqP4G+QjiKsXjOsCOyowNdIxfmfg+54="
+            }
+        ]
+        "#
+        .to_owned();
+
+        assert!(client.store_agent_config(&agent_config).is_ok());
+
+        assert_eq!(
+            client.get_peers().clone(),
+            vec![
+                AgentConfig::new(
+                    1,
+                    "127.0.0.1",
+                    5000,
+                    "1gVlq8XFG6qQ+4qj5GvX2xQZVc2bTlMVslNV6z8fuBI="
+                ),
+                AgentConfig::new(
+                    2,
+                    "127.0.0.1",
+                    5001,
+                    "b8CZcEFBzcGqWqP4G+QjiKsXjOsCOyowNdIxfmfg+54="
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn test_infer_network_value_ok() {
+        // A single network value should be returned
+        let agent_values = vec![1, 1, 2, 3, 4, 5, 6, 7];
+        let mut network_values = Client::infer_network_value(&agent_values).unwrap();
+        network_values.sort();
+        assert_eq!(network_values, vec![1]);
+
+        // Two network values should be returned
+        let agent_values = vec![1, 1, 2, 3, 4, 4, 5, 6, 7];
+        let mut network_values = Client::infer_network_value(&agent_values).unwrap();
+        network_values.sort();
+        assert_eq!(network_values, vec![1, 4]);
+
+        // Multiple network values should be returned
+        let agent_values = vec![1, 2, 3, 4, 5, 6, 7];
+        let mut network_values = Client::infer_network_value(&agent_values).unwrap();
+        network_values.sort();
+        assert_eq!(network_values, vec![1, 2, 3, 4, 5, 6, 7]);
+
+        // Should return `None`
+        let agent_values = vec![];
+        let network_values = Client::infer_network_value(&agent_values);
+        assert!(network_values.is_none());
+    }
+}

@@ -1,17 +1,6 @@
-use crate::args::Args;
-use crate::commands::Commands;
-use crate::game::Game;
-
-mod agent;
-mod agent_config;
-mod args;
-mod client;
-mod commands;
-mod game;
-mod keys;
-mod message;
-mod network_utils;
-mod packet;
+use liarslie::args::Args;
+use liarslie::commands::Commands;
+use liarslie::game::Game;
 
 #[tokio::main]
 async fn main() {

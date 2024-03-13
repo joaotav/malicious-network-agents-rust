@@ -35,9 +35,9 @@ Finally, agents might also be killed and become unreachable, leading to network 
 
 #### Starting the game
 
-``` start --value v --max-value max --num-agents number --liar-ratio ratio ```
+``` start --value v --max-value max --num-agents number --liar-ratio ratio --tamper-chance chance```
 
-This command launches a network of agents with a specified number of honest and liar agents based on the liar-ratio. Honest agents always respond with the integer value v, while liar agents respond with x such that x != v and 1 <= x <= max.
+This command launches a network of agents with a specified number of honest and liar agents based on the liar-ratio. Honest agents always respond with the integer value v, while liar agents respond with x such that x != v and 1 <= x <= max. The tamper chance specifies the probability that a liar agent will attempt to modify the contents of a message when forwarding it in **expert mode**_.
 
 #### Playing a standard round
 

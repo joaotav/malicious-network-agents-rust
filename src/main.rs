@@ -23,7 +23,11 @@ async fn main() {
                     max_value,
                     num_agents,
                     liar_ratio,
-                } => game.start(value, max_value, num_agents, liar_ratio).await,
+                    tamper_chance,
+                } => {
+                    game.start(value, max_value, num_agents, liar_ratio, tamper_chance)
+                        .await
+                }
                 Commands::Play => game.play().await,
                 Commands::Stop => game.stop().await,
                 Commands::Extend {

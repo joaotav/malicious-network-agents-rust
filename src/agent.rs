@@ -41,6 +41,8 @@ pub struct Agent {
     status: AgentStatus,
     /// A flag to indicate whether this agent is a liar or not.
     is_liar: bool,
+    /// The probability that the agent will tamper with messages when forwarding them
+    tamper_chance: f32,
 }
 
 #[derive(PartialEq, Clone, Debug, Copy)]
@@ -61,6 +63,7 @@ impl Agent {
         let keys = Keys::new_key_pair();
         let status = AgentStatus::Uninitialized;
         let is_liar = false;
+        let tamper_chance = 0.0;
         Agent {
             agent_id,
             value,
@@ -70,13 +73,19 @@ impl Agent {
             game_client_pubkey,
             status,
             is_liar,
+            tamper_chance,
         }
     }
 
     /// Returns a new liar instance of `Agent` with the `value` field set to an arbitrary
     /// value x, such that x != honest_value AND 1 <= x <= max_value. Each new instance
     /// is assigned an unique `agent_id` and `port`.
-    pub fn new_liar(honest_value: u64, max_value: u64, game_client_pubkey: String) -> Self {
+    pub fn new_liar(
+        honest_value: u64,
+        max_value: u64,
+        game_client_pubkey: String,
+        tamper_chance: f32,
+    ) -> Self {
         let agent_id = Self::get_new_id();
         let value = Self::get_liar_value(honest_value, max_value);
         let address = AGENT_ADDR.to_owned();
@@ -93,6 +102,7 @@ impl Agent {
             game_client_pubkey,
             status,
             is_liar,
+            tamper_chance,
         }
     }
 
@@ -141,6 +151,23 @@ impl Agent {
             self.port,
             &self.keys.get_public_key(),
         )
+    }
+
+    /// Receives a Vec<Packet> containing packets to be forwarded to the game's client and tampers
+    /// with their contents with a probability equal to `Agent.tamper_chance`.
+    fn tamper_with_messages(&self, peer_values: &mut Vec<Packet>) -> Result<(), bincode::Error> {
+        // For `tamper_chance` == 0.05, the probability of tampering wih any given message is 5%.
+        let tamper_chance = (self.tamper_chance * 100.0) as i32;
+
+        for packet in peer_values {
+            let tamper_roll = rand::thread_rng().gen_range(0..=(100));
+            if tamper_roll <= tamper_chance {
+                packet.message =
+                    // Change the message contained within the packet to an arbitrary message.
+                    Message::build_msg_send_value(tamper_roll as u64, tamper_roll as usize)?;
+            }
+        }
+        Ok(())
     }
 
     /// Builds and sends a `MsgSendValue` packet as a response to a `MsgQueryValue` request.
@@ -209,13 +236,23 @@ impl Agent {
     /// performing authentication is delegated to the game's client upon receiving the `MsgFwdValues`.
     async fn handle_msg_fetch_values(
         &self,
+        message_bytes: &[u8],
+        signature: &Option<Vec<u8>>,
         client_socket: &mut TcpStream,
         agent_id: usize,
         peer_addresses: &Vec<AgentConfig>,
     ) -> anyhow::Result<()> {
-        if agent_id != self.agent_id {
-            bail!("[!] error: Agent {} received MsgFetchValues, but message is addressed to Agent {}\n", 
-            self.agent_id, agent_id);
+        if let Some(signature) = signature {
+            if agent_id == self.agent_id {
+                Keys::verify(message_bytes, signature, &self.game_client_pubkey)?;
+            } else {
+                bail!("[!] error: Agent {} received MsgFetchValues, but message is addressed to Agent {}\n", 
+                self.agent_id, agent_id);
+            }
+        } else {
+            bail!(
+                "[!] error: MsgFetchValues requires a signature, but the received packet contains None\n"
+            );
         }
 
         let mut agent_conn_handles = Vec::new();
@@ -253,6 +290,15 @@ impl Agent {
                 }
                 Ok(Err(e)) => println!("{}", e),
                 Err(e) => println!("[!] error: task panicked - {}\n", e),
+            }
+        }
+
+        // If the agent is a liar, attempt to modify the messages before forwarding them to the client
+        if self.is_liar() {
+            let received_replies = peer_values.clone();
+            if let Err(_) = self.tamper_with_messages(&mut peer_values) {
+                // If tampering fails, revert back to the original replies
+                peer_values = received_replies;
             }
         }
 
@@ -322,8 +368,14 @@ impl Agent {
                 agent_id,
                 peer_addresses,
             }) => {
-                self.handle_msg_fetch_values(socket, agent_id, &peer_addresses)
-                    .await?
+                self.handle_msg_fetch_values(
+                    &packet.message,
+                    &packet.msg_sig,
+                    socket,
+                    agent_id,
+                    &peer_addresses,
+                )
+                .await?
             }
             Ok(Message::MsgFwdValues { .. }) => {
                 bail!(
@@ -492,6 +544,7 @@ mod tests {
             game_client_pubkey: "Hv9PImawhJ9+0ulJ/dlKjxTu+vKcKnyoJG5ahh4+DjY=".to_owned(),
             status: AgentStatus::Uninitialized,
             is_liar: false,
+            tamper_chance: 0.0,
         };
 
         assert_eq!(

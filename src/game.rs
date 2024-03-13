@@ -17,6 +17,8 @@ pub struct Game {
     value: Option<u64>,
     /// The maximum value that can be assigned to a liar.
     max_value: Option<u64>,
+    /// How likely it is for a liar to tamper with a message when forwarding it.
+    tamper_chance: Option<f32>,
     /// A vector to store instances of `Agent` that are deployed and ready
     /// to participate in a round of the game.
     active_agents: Vec<Agent>,
@@ -30,6 +32,7 @@ impl Game {
             is_ready: false,
             value: None,
             max_value: None,
+            tamper_chance: None,
             active_agents: Vec::new(),
             game_client: Client::new(),
         }
@@ -49,7 +52,11 @@ impl Game {
     }
 
     fn print_ready(&self) {
-        if self.value == None || self.max_value == None || self.active_agents.len() == 0 {
+        if self.value == None
+            || self.max_value == None
+            || self.active_agents.len() == 0
+            || self.tamper_chance == None
+        {
             panic!("Game cannot be started! Missing game values or active agents.\n");
         }
         println!("{}\n", "[+] Game is ready!".bold());
@@ -125,21 +132,23 @@ impl Game {
 
     /// Creates `num_liars` instances of liars and push those instances
     /// into `Game.active_agents`.
-    fn add_liar_agents(&mut self, value: u64, max_value: u64, num_liars: u16) {
+    fn add_liar_agents(&mut self, value: u64, max_value: u64, num_liars: u16, tamper_chance: f32) {
         for _ in 1..=num_liars {
             self.active_agents.push(Agent::new_liar(
                 value,
                 max_value,
                 self.game_client.get_keys().get_public_key().to_owned(),
+                tamper_chance,
             ));
         }
     }
 
     /// Sets the `Game.value` and `Game.max_value` fields to be used as a reference
     /// when creating new agents. Also sets the `Game.is_ready` to `true`.
-    fn init_game(&mut self, value: u64, max_value: u64) {
+    fn init_game(&mut self, value: u64, max_value: u64, tamper_chance: f32) {
         self.set_value(value);
         self.set_max_value(max_value);
+        self.set_tamper_chance(tamper_chance);
         self.set_ready();
     }
 
@@ -159,6 +168,11 @@ impl Game {
     /// Sets `Game.is_ready` to `true`, indicating that the game is ready to be played.
     fn set_ready(&mut self) {
         self.is_ready = true;
+    }
+
+    /// Sets the `tamper_chance` field, determining the probability that liars will modify messages.
+    fn set_tamper_chance(&mut self, tamper_chance: f32) {
+        self.tamper_chance = Some(tamper_chance);
     }
 
     /// Returns all the agents in the game's list of active agents, regardless of their status.
@@ -217,7 +231,14 @@ impl Game {
     /// agents and produces the `agents.config` file containing information that can be used
     /// to communicate with those agents. It then displays a message to indicate that the
     //  game is ready to be played.
-    pub async fn start(&mut self, value: u64, max_value: u64, num_agents: u16, liar_ratio: f32) {
+    pub async fn start(
+        &mut self,
+        value: u64,
+        max_value: u64,
+        num_agents: u16,
+        liar_ratio: f32,
+        tamper_chance: f32,
+    ) {
         if self.is_ready() {
             Game::print_started();
             return;
@@ -233,7 +254,7 @@ impl Game {
         // in an increasing order, the first half of agents all have the same value (honest)
         // and the second half all have different values (liars).
         self.add_honest_agents(value, num_honest);
-        self.add_liar_agents(value, max_value, num_liars);
+        self.add_liar_agents(value, max_value, num_liars, tamper_chance);
 
         self.start_game_agents().await;
 
@@ -258,7 +279,7 @@ impl Game {
             return;
         }
 
-        self.init_game(value, max_value);
+        self.init_game(value, max_value, tamper_chance);
         self.print_ready();
     }
 
@@ -376,9 +397,11 @@ impl Game {
         let agents_backup = self.active_agents.clone();
 
         // self.value and self.max_value should not be None since self.is_ready() == true,
-        if let (Some(value), Some(max_value)) = (self.value, self.max_value) {
+        if let (Some(value), Some(max_value), Some(tamper_chance)) =
+            (self.value, self.max_value, self.tamper_chance)
+        {
             self.add_honest_agents(value, num_honest);
-            self.add_liar_agents(value, max_value, num_liars);
+            self.add_liar_agents(value, max_value, num_liars, tamper_chance);
         } else {
             panic!("[!] Unable to extend game; missing game settings.");
         }
@@ -565,11 +588,13 @@ mod tests {
         game.is_ready = true;
         game.value = Some(5);
         game.max_value = Some(10);
+        game.tamper_chance = Some(0.1);
         game.reset_game();
 
         assert_ne!(game.is_ready, true);
         assert_ne!(game.value, Some(5));
         assert_ne!(game.max_value, Some(10));
+        assert_ne!(game.tamper_chance, Some(0.1));
     }
 
     #[test]

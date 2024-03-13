@@ -21,6 +21,11 @@ pub enum Commands {
         /// The ratio of liars (0.0 to 1.0) among the specified number of agents
         #[arg(long)]
         liar_ratio: f32,
+
+        /// The probability (0.0 to 1.0) that a liar agent will alter the contents of a message when
+        /// forwarding it.
+        #[arg(long)]
+        tamper_chance: f32,
     },
     /// Plays a round of the game on standard mode
     Play,
@@ -92,12 +97,26 @@ impl Commands {
         }
     }
 
+    /// Receives a variant of `Commands` and checks whether it contains the `tamper_chance` field
+    /// or not. If it does, returns the value contained in `tamper_chance`.
+    fn has_tamper_chance(&self) -> Option<f32> {
+        match self {
+            Commands::Start { tamper_chance, .. } => Some(*tamper_chance),
+            Commands::Play { .. }
+            | Commands::Extend { .. }
+            | Commands::Stop { .. }
+            | Commands::PlayExpert { .. }
+            | Commands::Kill { .. } => None,
+        }
+    }
+
     /// Receives a variant of `Commands``, check for, and test all possible arguments to ensure
     /// that they satisfy the program's constraints.
     pub fn validate_args_values(&self) -> Result<(), String> {
         self.validate_liar_ratio()?;
         self.validate_agent_values()?;
         self.validate_num_agents()?;
+        self.validate_tamper_chance()?;
         Ok(())
     }
 
@@ -155,6 +174,19 @@ impl Commands {
             None => Ok(()),
         }
     }
+
+    /// Receives a variant of `Commands` and, if it contains the `tamper_chance` field,
+    /// checks if the value of `tamper_chance` is within the range [0.0, 1.0].
+    fn validate_tamper_chance(&self) -> Result<(), String> {
+        match self.has_tamper_chance() {
+            Some(tamper_chance) if (0.0..=1.0).contains(&tamper_chance) => Ok(()),
+            Some(_) => Err(
+                "[!] error: --tamper-chance must be within the range of 0.0 to 1.0 (inclusive)\n"
+                    .to_string(),
+            ),
+            None => Ok(()),
+        }
+    }
 }
 
 // ******************************************************************************************
@@ -172,6 +204,7 @@ mod tests {
             max_value: 8,
             num_agents: 5,
             liar_ratio: 2.0,
+            tamper_chance: 0.5,
         };
         assert!(case1.validate_liar_ratio().is_err());
 
@@ -180,6 +213,7 @@ mod tests {
             max_value: 8,
             num_agents: 5,
             liar_ratio: -0.1,
+            tamper_chance: 0.5,
         };
         assert!(case2.validate_liar_ratio().is_err());
     }
@@ -191,6 +225,7 @@ mod tests {
             max_value: 8,
             num_agents: 0,
             liar_ratio: 0.5,
+            tamper_chance: 0.5,
         };
         assert!(command.validate_num_agents().is_err());
     }
@@ -203,6 +238,7 @@ mod tests {
             max_value: 8,
             num_agents: 5,
             liar_ratio: 0.5,
+            tamper_chance: 0.5,
         };
         assert!(case1.validate_agent_values().is_err());
 
@@ -212,6 +248,7 @@ mod tests {
             max_value: 2,
             num_agents: 5,
             liar_ratio: 0.5,
+            tamper_chance: 0.5,
         };
         assert!(case2.validate_agent_values().is_err());
 
@@ -221,7 +258,31 @@ mod tests {
             max_value: 1,
             num_agents: 5,
             liar_ratio: 0.5,
+            tamper_chance: 0.5,
         };
         assert!(case3.validate_agent_values().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_tamper_chance() {
+        // Should throw an error because tamper chance > 1.0
+        let case1 = Commands::Start {
+            value: 0,
+            max_value: 8,
+            num_agents: 5,
+            liar_ratio: 0.5,
+            tamper_chance: 1.001,
+        };
+        assert!(case1.validate_agent_values().is_err());
+
+        // Should throw an error because tamper_chance is not unsigned
+        let case2 = Commands::Start {
+            value: 3,
+            max_value: 2,
+            num_agents: 5,
+            liar_ratio: 0.5,
+            tamper_chance: -0.2,
+        };
+        assert!(case2.validate_agent_values().is_err());
     }
 }

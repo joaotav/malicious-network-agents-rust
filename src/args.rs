@@ -51,14 +51,16 @@ mod tests {
 
     #[test]
     fn test_parse_start_command() {
-        let input = "start --value 5 --max-value 8 --num-agents 5 --liar-ratio 0.2";
+        let input =
+            "start --value 5 --max-value 8 --num-agents 5 --liar-ratio 0.2 --tamper-chance 0.35";
         assert_eq!(
             Ok(Args {
                 command: Commands::Start {
                     value: 5,
                     max_value: 8,
                     num_agents: 5,
-                    liar_ratio: 0.2
+                    liar_ratio: 0.2,
+                    tamper_chance: 0.35,
                 }
             }),
             Args::parse_args(input)

@@ -209,13 +209,23 @@ impl Agent {
     /// performing authentication is delegated to the game's client upon receiving the `MsgFwdValues`.
     async fn handle_msg_fetch_values(
         &self,
+        message_bytes: &[u8],
+        signature: &Option<Vec<u8>>,
         client_socket: &mut TcpStream,
         agent_id: usize,
         peer_addresses: &Vec<AgentConfig>,
     ) -> anyhow::Result<()> {
-        if agent_id != self.agent_id {
-            bail!("[!] error: Agent {} received MsgFetchValues, but message is addressed to Agent {}\n", 
-            self.agent_id, agent_id);
+        if let Some(signature) = signature {
+            if agent_id == self.agent_id {
+                Keys::verify(message_bytes, signature, &self.game_client_pubkey)?;
+            } else {
+                bail!("[!] error: Agent {} received MsgFetchValues, but message is addressed to Agent {}\n", 
+                self.agent_id, agent_id);
+            }
+        } else {
+            bail!(
+                "[!] error: MsgFetchValues requires a signature, but the received packet contains None\n"
+            );
         }
 
         let mut agent_conn_handles = Vec::new();
@@ -322,8 +332,14 @@ impl Agent {
                 agent_id,
                 peer_addresses,
             }) => {
-                self.handle_msg_fetch_values(socket, agent_id, &peer_addresses)
-                    .await?
+                self.handle_msg_fetch_values(
+                    &packet.message,
+                    &packet.msg_sig,
+                    socket,
+                    agent_id,
+                    &peer_addresses,
+                )
+                .await?
             }
             Ok(Message::MsgFwdValues { .. }) => {
                 bail!(

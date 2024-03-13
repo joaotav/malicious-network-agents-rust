@@ -1,20 +1,13 @@
+use crate::agent::{Agent, AgentStatus};
+use crate::agent_config::AgentConfig;
+use crate::client::Client;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use std::io::{self, Write};
 use text_colorizer::Colorize;
 use tokio::spawn;
 use tokio::sync::oneshot;
-
-use crate::agent::{Agent, AgentStatus};
-use crate::agent_config::AgentConfig;
-use crate::client::Client;
-
 /// Represents the configuration for a game of Liars Lie.
-///
-/// # Example
-/// ```
-/// let mut game = Game::new();
-/// ```
 #[derive(Debug, PartialEq)]
 pub struct Game {
     /// Represents the state of the game. Should be set to `false` if the game is

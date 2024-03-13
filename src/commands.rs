@@ -2,11 +2,6 @@ use clap::Subcommand;
 
 /// Represents an user issued command along with its associated arguments.
 /// All arguments must be passed using the long format, e.g, --value.
-///
-/// # Example
-/// ```
-/// let command = Commands::Start { value: 5, max_value: 8, num_agents: 5, liar_ratio: 0.2};
-/// ```
 #[derive(Subcommand, Debug, Clone, PartialEq)]
 pub enum Commands {
     /// Launches agents and generates the agents.config file (requires additional arguments)

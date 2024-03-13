@@ -23,13 +23,6 @@ const AGENT_ADDR: &str = "127.0.0.1";
 /// Each `Agent` has an unique identifier `agent_id`, a value `value` to report when
 /// queried, and a network `address` and `port` used for communication with clients and
 /// other Agents. Agents can be instantiated as either honest or liars.
-///
-/// # Examples
-///
-/// ```
-/// let honest_agent = Agent::new_honest(10);
-/// let liar = Agent::new_liar(10, 99);
-/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Agent {
     /// An identifier for each instance of Agent.
